@@ -4,7 +4,7 @@ import os
 
 class OpenALConan(ConanFile):
     name = "openal"
-    version = "1.19.1"  # stgatilov: taken from recipe for 1.19.0
+    version = "1.19.0"
     description = "OpenAL Soft is a software implementation of the OpenAL 3D audio API."
     topics = ("conan", "openal", "audio", "api")
     url = "http://github.com/bincrafters/conan-openal"
@@ -12,7 +12,7 @@ class OpenALConan(ConanFile):
     author = "Bincrafters <bincrafters@gmail.com>"
     license = "MIT"
     exports = ["LICENSE.md"]
-    exports_sources = ["CMakeLists.txt", "mxcsr.patch"]
+    exports_sources = ["CMakeLists.txt"]
     generators = "cmake"
 
     settings = "os", "arch", "compiler", "build_type"
@@ -33,11 +33,10 @@ class OpenALConan(ConanFile):
 
     def source(self):
         source_url = "https://github.com/kcat/openal-soft"
-        sha256 = "9f3536ab2bb7781dbafabc6a61e0b34b17edd16bd6c2eaf2ae71bc63078f98c7"
+        sha256 = "bb26bc1d40010f059b3cffd336a09bf07f428b1115f00869ff995eb094a382b9"
         tools.get("{0}/archive/openal-soft-{1}.tar.gz".format(source_url, self.version), sha256=sha256)
         extracted_dir = "openal-soft-openal-soft-" + self.version
         os.rename(extracted_dir, self._source_subfolder)
-        tools.patch(patch_file = "mxcsr.patch", base_path = self._source_subfolder)
 
     def _configure_cmake(self):
         cmake = CMake(self)

@@ -5,7 +5,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> update to latest code
 extern unzFile unzReOpen( const char* path, unzFile file );
 /* Re-Open a Zip file, i.e. clone an existing one and give it a new file descriptor. */
 

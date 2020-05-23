@@ -883,12 +883,21 @@ Sys_AsyncThread
 =================
 */
 THREAD_RETURN_TYPE Sys_AsyncThread( void* ) {
+<<<<<<< HEAD
 	while ( 1 ) {
 		usleep( 16666 );
 		common->Async();
 		pthread_testcancel();
 	}
 
+=======
+	while ( 1 ) {
+		usleep( 16666 );
+		common->Async();
+		pthread_testcancel();
+	}
+
+>>>>>>> update to latest code
     return (THREAD_RETURN_TYPE) 0;
 }
 

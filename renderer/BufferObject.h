@@ -67,12 +67,21 @@ private:
 	GLuint				bufferObject;
 	GLenum              bufferType;
 
+<<<<<<< HEAD
 	bool				persistentMap;
 	void *				mapBuff;
 	int					mappedSize;
 	int					lastMapOffset;
 	GLuint				tempBuff;
 
+=======
+	bool				persistentMap;
+	void *				mapBuff;
+	int					mappedSize;
+	int					lastMapOffset;
+	GLuint				tempBuff;
+
+>>>>>>> update to latest code
 	// sizeof() confuses typeinfo...
 	static const int	MAPPED_FLAG = 1 << ( 4 /* sizeof( int ) */ * 8 - 1 );
 

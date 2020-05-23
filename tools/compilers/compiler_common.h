@@ -13,7 +13,11 @@
  
 ******************************************************************************/
 
+<<<<<<< HEAD
 #pragma once
+=======
+#pragma once
+>>>>>>> update to latest code
 
 //used by DMap, AAS, and other tools to find user-specified map
 bool FindMapFile(idStr &mapfile);

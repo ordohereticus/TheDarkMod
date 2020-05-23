@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
 ===========================================================================
 
@@ -24,6 +25,34 @@ In addition, the Doom 3 Source Code is also subject to certain additional terms.
 If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 ===========================================================================
+=======
+/*
+===========================================================================
+
+Doom 3 GPL Source Code
+Copyright (C) 1999-2011 id Software LLC, a ZeniMax Media company.
+
+This file is part of the Doom 3 GPL Source Code ("Doom 3 Source Code").
+
+Doom 3 Source Code is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Doom 3 Source Code is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Doom 3 Source Code.  If not, see <http://www.gnu.org/licenses/>.
+
+In addition, the Doom 3 Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 Source Code.  If not, please request a copy in writing from id Software at the address below.
+
+If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
+
+===========================================================================
+>>>>>>> update to latest code
 */
 
 #include "precompiled.h"
@@ -37,6 +66,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "GLSLProgramManager.h"
 #include "AmbientOcclusionStage.h"
 
+<<<<<<< HEAD
 #if defined(_MSC_VER) && _MSC_VER >= 1800 && !defined(DEBUG)
 //#pragma optimize("t", off) // duzenko: used in release to enforce breakpoints in inlineable code. Please do not remove
 #endif
@@ -56,6 +86,27 @@ struct ShadowMapUniforms : GLSLUniformGroup {
 GLSLProgram *currrentInteractionShader; // dynamic, either pointInteractionShader or ambientInteractionShader
 
 idCVarBool r_shadowMapSinglePass( "r_shadowMapSinglePass", "0", CVAR_ARCHIVE | CVAR_RENDERER, "render shadow maps for all lights in a single pass" );
+=======
+#if defined(_MSC_VER) && _MSC_VER >= 1800 && !defined(DEBUG)
+//#pragma optimize("t", off) // duzenko: used in release to enforce breakpoints in inlineable code. Please do not remove
+#endif
+
+idCVarBool r_shadowMapCullFront( "r_shadowMapCullFront", "0", CVAR_ARCHIVE | CVAR_RENDERER, "Cull front faces in shadow maps" );
+idCVarBool r_useMultiDraw( "r_useMultiDraw", "0", CVAR_RENDERER, "Use glMultiDrawElements to save on draw calls" );
+
+struct ShadowMapUniforms : GLSLUniformGroup {
+	UNIFORM_GROUP_DEF( ShadowMapUniforms )
+
+	DEFINE_UNIFORM( vec4, lightOrigin )
+	DEFINE_UNIFORM( float, lightRadius )
+	DEFINE_UNIFORM( float, alphaTest )
+	DEFINE_UNIFORM( mat4, modelMatrix )
+};
+
+GLSLProgram *currrentInteractionShader; // dynamic, either pointInteractionShader or ambientInteractionShader
+
+idCVarBool r_shadowMapSinglePass( "r_shadowMapSinglePass", "0", CVAR_ARCHIVE | CVAR_RENDERER, "render shadow maps for all lights in a single pass" );
+>>>>>>> update to latest code
 
 static void ChooseInteractionProgram() {
 	if ( backEnd.vLight->lightShader->IsAmbientLight() ) {
@@ -71,6 +122,7 @@ static void ChooseInteractionProgram() {
 	GL_CheckErrors();
 }
 
+<<<<<<< HEAD
 /*
 ==================
 RB_GLSL_DrawInteraction
@@ -83,17 +135,36 @@ void RB_GLSL_DrawInteraction( const drawInteraction_t *din ) {
 	interactionUniforms->SetForInteraction( din );
 
 	// set the textures
+=======
+/*
+==================
+RB_GLSL_DrawInteraction
+==================
+*/
+void RB_GLSL_DrawInteraction( const drawInteraction_t *din ) {
+	// load all the shader parameters
+	GL_CheckErrors();
+	Uniforms::Interaction *interactionUniforms = currrentInteractionShader->GetUniformGroup<Uniforms::Interaction>();
+	interactionUniforms->SetForInteraction( din );
+
+	// set the textures
+>>>>>>> update to latest code
 	// texture 0 will be the per-surface bump map
 	if ( !din->bumpImage && interactionUniforms->hasTextureDNS.IsPresent() ) {
 		interactionUniforms->hasTextureDNS.Set( 1, 0, 1 );
 	} else {
 		if( !din->bumpImage ) // FIXME Uh-oh! This should not happen
+<<<<<<< HEAD
 			return;
+=======
+			return;
+>>>>>>> update to latest code
 		GL_SelectTexture( 0 );
 		din->bumpImage->Bind();
 		if ( interactionUniforms->hasTextureDNS.IsPresent() ) {
 			interactionUniforms->hasTextureDNS.Set( 1, 1, 1 );
 		}
+<<<<<<< HEAD
 	}
 
 	// texture 1 will be the light falloff texture
@@ -130,6 +201,44 @@ void RB_GLSL_CreateDrawInteractions( const drawSurf_t *surf ) {
 	}
 	GL_PROFILE( "GLSL_CreateDrawInteractions" );
 
+=======
+	}
+
+	// texture 1 will be the light falloff texture
+	GL_SelectTexture( 1 );
+	din->lightFalloffImage->Bind();
+
+	// texture 2 will be the light projection texture
+	GL_SelectTexture( 2 );
+	din->lightImage->Bind();
+
+	// texture 3 is the per-surface diffuse map
+	GL_SelectTexture( 3 );
+	din->diffuseImage->Bind();
+
+	// texture 4 is the per-surface specular map
+	GL_SelectTexture( 4 );
+	din->specularImage->Bind();
+
+	if ( !backEnd.vLight->lightShader->IsAmbientLight() && ( r_softShadowsQuality.GetBool() && !backEnd.viewDef->IsLightGem() || backEnd.vLight->shadows == LS_MAPS ) )
+		FB_BindShadowTexture();
+
+	// draw it
+	RB_DrawElementsWithCounters( din->surf );
+}
+
+/*
+=============
+RB_GLSL_CreateDrawInteractions
+=============
+*/
+void RB_GLSL_CreateDrawInteractions( const drawSurf_t *surf ) {
+	if ( !surf ) {
+		return;
+	}
+	GL_PROFILE( "GLSL_CreateDrawInteractions" );
+
+>>>>>>> update to latest code
 	// if using float buffers, alpha values are not clamped and can stack up quite high, since most interactions add 1 to its value
 	// this in turn causes issues with some shader stage materials that use DST_ALPHA blending.
 	// masking the alpha channel for interactions seems to fix those issues, but only do it for float buffers in case it has
@@ -137,16 +246,26 @@ void RB_GLSL_CreateDrawInteractions( const drawSurf_t *surf ) {
 	int alphaMask = r_fboColorBits.GetInteger() == 64 ? GLS_ALPHAMASK : 0;
 
 	// perform setup here that will be constant for all interactions
+<<<<<<< HEAD
 	GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | alphaMask | backEnd.depthFunc );
 	backEnd.currentSpace = NULL; // ambient/interaction shaders conflict
 
 	// bind the vertex and fragment program
 	ChooseInteractionProgram();
 	Uniforms::Interaction *interactionUniforms = currrentInteractionShader->GetUniformGroup<Uniforms::Interaction>();
+=======
+	GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | alphaMask | backEnd.depthFunc );
+	backEnd.currentSpace = NULL; // ambient/interaction shaders conflict
+
+	// bind the vertex and fragment program
+	ChooseInteractionProgram();
+	Uniforms::Interaction *interactionUniforms = currrentInteractionShader->GetUniformGroup<Uniforms::Interaction>();
+>>>>>>> update to latest code
 	interactionUniforms->SetForShadows( surf == backEnd.vLight->translucentInteractions );
 	if( backEnd.vLight->lightShader->IsAmbientLight() && ambientOcclusion->ShouldEnableForCurrentView() ) {
 		ambientOcclusion->BindSSAOTexture( 6 );
 	}
+<<<<<<< HEAD
 
 	for ( /**/; surf; surf = surf->nextOnLight ) {
 		if ( surf->dsFlags & DSF_SHADOW_MAP_ONLY ) {
@@ -242,6 +361,103 @@ void RB_GLSL_DrawLight_Stencil() {
 
 	GLSLProgram::Deactivate();	// if there weren't any globalInteractions, it would have stayed on
 }
+=======
+
+	for ( /**/; surf; surf = surf->nextOnLight ) {
+		if ( surf->dsFlags & DSF_SHADOW_MAP_ONLY ) {
+			continue;
+		}
+		if ( backEnd.currentSpace != surf->space ) {
+			// FIXME needs a better integration with RB_CreateSingleDrawInteractions
+			interactionUniforms->modelMatrix.Set( surf->space->modelMatrix );
+		}
+
+		// set the vertex pointers
+		vertexCache.VertexPosition( surf->ambientCache );
+
+		// this may cause RB_GLSL_DrawInteraction to be executed multiple
+		// times with different colors and images if the surface or light have multiple layers
+		RB_CreateSingleDrawInteractions( surf );
+		GL_CheckErrors();
+	}
+
+	GL_SelectTexture( 0 );
+
+	GLSLProgram::Deactivate();
+	GL_CheckErrors();
+}
+
+/*
+==================
+RB_GLSL_DrawLight_Stencil
+==================
+*/
+void RB_GLSL_DrawLight_Stencil() {
+	GL_PROFILE( "GLSL_DrawLight_Stencil" );
+
+	bool useShadowFbo = r_softShadowsQuality.GetBool() && !backEnd.viewDef->IsLightGem();// && (r_shadows.GetInteger() != 2);
+
+	// set depth bounds for the whole light
+	const DepthBoundsTest depthBoundsTest( backEnd.vLight->scissorRect );
+
+	// clear the stencil buffer if needed
+	if ( backEnd.vLight->globalShadows || backEnd.vLight->localShadows ) {
+		backEnd.currentScissor = backEnd.vLight->scissorRect;
+
+		if ( r_useScissor.GetBool() ) {
+			GL_Scissor( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
+			            backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
+			            backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
+			            backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
+		}
+
+		if ( useShadowFbo ) {
+			FB_ToggleShadow( true );
+		}
+		qglClear( GL_STENCIL_BUFFER_BIT );
+	} else {
+		// no shadows, so no need to read or write the stencil buffer
+		qglStencilFunc( GL_ALWAYS, 128, 255 );
+	}
+	programManager->stencilShadowShader->Activate();
+
+	RB_StencilShadowPass( backEnd.vLight->globalShadows );
+	if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
+		FB_ResolveShadowAA();
+	}
+
+	const bool NoSelfShadows = true; // don't delete - debug check for low-poly "round" models casting ugly shadows on themselves
+
+	if ( NoSelfShadows ) {
+		if ( useShadowFbo ) {
+			FB_ToggleShadow( false );
+		}
+		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
+
+		if ( useShadowFbo ) {
+			FB_ToggleShadow( true );
+		}
+	}
+	programManager->stencilShadowShader->Activate();
+
+	RB_StencilShadowPass( backEnd.vLight->localShadows );
+	if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
+		FB_ResolveShadowAA();
+	}
+
+
+	if ( useShadowFbo ) {
+		FB_ToggleShadow( false );
+	}
+
+	if ( !NoSelfShadows ) {
+		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
+	}
+	RB_GLSL_CreateDrawInteractions( backEnd.vLight->globalInteractions );
+
+	GLSLProgram::Deactivate();	// if there weren't any globalInteractions, it would have stayed on
+}
+>>>>>>> update to latest code
 
 float GetEffectiveLightRadius() {
 	float lightRadius = backEnd.vLight->radius;
@@ -251,6 +467,7 @@ float GetEffectiveLightRadius() {
 		lightRadius = r_softShadowsRadius.GetFloat();	//default value
 	return lightRadius;
 }
+<<<<<<< HEAD
 
 /*
 =============
@@ -266,6 +483,23 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 
 	GL_CheckErrors();
 	FB_ToggleShadow( true );
+=======
+
+/*
+=============
+RB_GLSL_CreateDrawInteractions
+=============
+*/
+void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = false ) {
+	if ( r_shadowMapSinglePass.GetBool() /*|| r_skipInteractions.GetBool()*/ ) // duzenko: let shadow maps render for benchmarking
+		return;
+	if ( backEnd.vLight->shadowMapIndex > 42 )
+		return;
+	GL_PROFILE( "GLSL_DrawInteractions_ShadowMap" );
+
+	GL_CheckErrors();
+	FB_ToggleShadow( true );
+>>>>>>> update to latest code
 
 	programManager->shadowMapShader->Activate();
 	GL_SelectTexture( 0 );
@@ -279,11 +513,19 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	shadowMapUniforms->lightOrigin.Set( lightOrigin );
 	shadowMapUniforms->lightRadius.Set( GetEffectiveLightRadius() );
 	shadowMapUniforms->alphaTest.Set( -1 );
+<<<<<<< HEAD
 	backEnd.currentSpace = NULL;
 
 	GL_Cull( r_shadowMapCullFront ? CT_BACK_SIDED : CT_TWO_SIDED );
 	qglPolygonOffset( 0, 0 );
 	qglEnable( GL_POLYGON_OFFSET_FILL );
+=======
+	backEnd.currentSpace = NULL;
+
+	GL_Cull( r_shadowMapCullFront ? CT_BACK_SIDED : CT_TWO_SIDED );
+	qglPolygonOffset( 0, 0 );
+	qglEnable( GL_POLYGON_OFFSET_FILL );
+>>>>>>> update to latest code
 
 	auto &page = ShadowAtlasPages[backEnd.vLight->shadowMapIndex-1];
 	qglViewport( page.x, page.y, 6*page.width, page.width );
@@ -294,6 +536,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	for ( int i = 0; i < 4; i++ )
 		qglEnable( GL_CLIP_PLANE0 + i );
 	for ( ; surf; surf = surf->nextOnLight ) {
+<<<<<<< HEAD
 		if ( surf->dsFlags & DSF_SHADOW_MAP_IGNORE ) 
 			continue;    // this flag is set by entities with parms.noShadow in R_LinkLightSurf (candles, torches, etc)
 
@@ -404,12 +647,125 @@ void RB_ShadowMap_RenderAllLights();
 void RB_GLSL_DrawInteractions() {
 	GL_PROFILE( "GLSL_DrawInteractions" );
 	GL_SelectTexture( 0 );
+=======
+		if ( surf->dsFlags & DSF_SHADOW_MAP_IGNORE ) 
+			continue;    // this flag is set by entities with parms.noShadow in R_LinkLightSurf (candles, torches, etc)
+
+		/*float customOffset = surf->space->entityDef->parms.shadowMapOffset + surf->material->GetShadowMapOffset();
+		if ( customOffset != 0 )
+			qglPolygonOffset( customOffset, 0 );*/
+
+		if ( backEnd.currentSpace != surf->space ) {
+			shadowMapUniforms->modelMatrix.Set( surf->space->modelMatrix );
+			backEnd.currentSpace = surf->space;
+			backEnd.pc.c_matrixLoads++;
+		}
+
+		RB_SingleSurfaceToDepthBuffer( programManager->shadowMapShader, surf );
+		backEnd.pc.c_shadowIndexes += surf->numIndexes;
+		backEnd.pc.c_drawIndexes -= surf->numIndexes;
+
+		/*if ( customOffset != 0 )
+			qglPolygonOffset( 0, 0 );*/
+	}
+	for ( int i = 0; i < 4; i++ )
+		qglDisable( GL_CLIP_PLANE0 + i );
+
+	qglDisable( GL_POLYGON_OFFSET_FILL );
+	GL_Cull( CT_FRONT_SIDED );
+
+	backEnd.currentSpace = NULL; // or else conflicts with qglLoadMatrixf
+	GLSLProgram::Deactivate();
+
+	FB_ToggleShadow( false );
+
+	GL_CheckErrors();
+}
+
+void RB_GLSL_GenerateShadowMaps() {
+	if ( r_shadows.GetBool() == 0 )
+		return;
+	for ( backEnd.vLight = backEnd.viewDef->viewLights; backEnd.vLight; backEnd.vLight = backEnd.vLight->next ) {
+		if ( !backEnd.vLight->shadowMapIndex || backEnd.vLight->singleLightOnly )
+			continue;
+		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->globalInteractions, true );
+		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->localInteractions, false );
+	}
+}
+
+/*
+==================
+RB_GLSL_DrawLight_ShadowMap
+==================
+*/
+void RB_GLSL_DrawLight_ShadowMap() {
+	GL_PROFILE( "GLSL_DrawLight_ShadowMap" );
+
+	GL_CheckErrors();
+
+	if ( backEnd.vLight->lightShader->LightCastsShadows() ) {
+		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->globalInteractions, true );
+		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
+		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->localInteractions );
+	} else {
+		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
+	}
+	RB_GLSL_CreateDrawInteractions( backEnd.vLight->globalInteractions );
+
+	GLSLProgram::Deactivate();
+
+	GL_CheckErrors();
+}
+
+void RB_GLSL_DrawInteractions_SingleLight() {
+	// do fogging later
+	if ( backEnd.vLight->lightShader->IsFogLight() ) {
+		return;
+	}
+
+	if ( backEnd.vLight->lightShader->IsBlendLight() ) {
+		return;
+	}
+
+	// if there are no interactions, get out!
+	if ( r_singleLight.GetInteger() < 0 ) // duzenko 2018: I need a way to override this for debugging 
+	if ( !backEnd.vLight->localInteractions && !backEnd.vLight->globalInteractions && !backEnd.vLight->translucentInteractions )
+		return;
+
+	if ( backEnd.vLight->shadows == LS_MAPS ) {
+		RB_GLSL_DrawLight_ShadowMap();
+	} else {
+		RB_GLSL_DrawLight_Stencil();
+	}
+
+	// translucent surfaces never get stencil shadowed
+	if ( r_skipTranslucent.GetBool() ) {
+		return;
+	}
+	qglStencilFunc( GL_ALWAYS, 128, 255 );
+	backEnd.depthFunc = GLS_DEPTHFUNC_LESS;
+	RB_GLSL_CreateDrawInteractions( backEnd.vLight->translucentInteractions );
+	backEnd.depthFunc = GLS_DEPTHFUNC_EQUAL;
+}
+
+/*
+==================
+RB_GLSL_DrawInteractions
+==================
+*/
+void RB_ShadowMap_RenderAllLights();
+
+void RB_GLSL_DrawInteractions() {
+	GL_PROFILE( "GLSL_DrawInteractions" );
+	GL_SelectTexture( 0 );
+>>>>>>> update to latest code
 
 	if ( r_shadows.GetInteger() == 2 ) 
 		if ( r_shadowMapSinglePass.GetBool() )
 			RB_ShadowMap_RenderAllLights();
 	if ( r_shadows.GetInteger() != 1 )
 		if ( r_interactionProgram.GetInteger() == 2 ) {
+<<<<<<< HEAD
 			extern void RB_GLSL_DrawInteractions_MultiLight();
 			RB_GLSL_DrawInteractions_MultiLight();
 			return;
@@ -426,10 +782,29 @@ void RB_GLSL_DrawInteractions() {
 
 /*
 ==================
+=======
+			extern void RB_GLSL_DrawInteractions_MultiLight();
+			RB_GLSL_DrawInteractions_MultiLight();
+			return;
+		}
+
+	// for each light, perform adding and shadowing
+	for ( backEnd.vLight = backEnd.viewDef->viewLights; backEnd.vLight; backEnd.vLight = backEnd.vLight->next ) 
+		RB_GLSL_DrawInteractions_SingleLight();
+
+	// disable stencil shadow test
+	qglStencilFunc( GL_ALWAYS, 128, 255 );
+	GL_SelectTexture( 0 );
+}
+
+/*
+==================
+>>>>>>> update to latest code
 R_ReloadGLSLPrograms
 
 If the 'required' shaders fail to compile the r_useGLSL will toggle to 0 so as to fall back to ARB2 shaders
 filenames hardcoded here since they're not used elsewhere
+<<<<<<< HEAD
 FIXME split the stencil and shadowmap interactions in separate shaders as the latter might not compile on DX10 and older hardware
 ==================
 */
@@ -464,6 +839,42 @@ GLSLProgram *R_FindGLSLProgram( const char *name ) {
 	GLSLProgram *program = programManager->Find( name );
 	if( program == nullptr ) {
 		program = programManager->Load( name );
+=======
+FIXME split the stencil and shadowmap interactions in separate shaders as the latter might not compile on DX10 and older hardware
+==================
+*/
+ID_NOINLINE bool R_ReloadGLSLPrograms(const char *programName) { 
+	// incorporate new shader interface:
+	if ( programName )
+		programManager->Reload( programName );
+	else
+		programManager->ReloadAllPrograms();
+
+	return true;
+}
+
+/*
+==================
+R_ReloadGLSLPrograms_f
+==================
+*/
+void R_ReloadGLSLPrograms_f( const idCmdArgs &args ) {
+	common->Printf( "---------- R_ReloadGLSLPrograms_f -----------\n" );
+
+	const char *programName = args.Argc() > 1 ? args.Argv( 1 ) : nullptr;
+	if ( !R_ReloadGLSLPrograms( programName ) ) {
+		r_useGLSL = false;
+		common->Printf( "GLSL shaders failed to init.\n" );
+		return;
+	}
+	common->Printf( "---------------------------------\n" );
+}
+
+GLSLProgram *R_FindGLSLProgram( const char *name ) {
+	GLSLProgram *program = programManager->Find( name );
+	if( program == nullptr ) {
+		program = programManager->Load( name );
+>>>>>>> update to latest code
 	}
 	return program;
 }
@@ -673,12 +1084,21 @@ void Uniforms::Global::Set(const viewEntity_t *space) {
 	}
 }
 
+<<<<<<< HEAD
 void Uniforms::MaterialStage::Set(const shaderStage_t *pStage, const drawSurf_t *surf) {
 	//============================================================================
 	//note: copied from RB_SetProgramEnvironment and RB_SetProgramEnvironmentSpace
 	//============================================================================
 
 	idVec4 parm;
+=======
+void Uniforms::MaterialStage::Set(const shaderStage_t *pStage, const drawSurf_t *surf) {
+	//============================================================================
+	//note: copied from RB_SetProgramEnvironment and RB_SetProgramEnvironmentSpace
+	//============================================================================
+
+	idVec4 parm;
+>>>>>>> update to latest code
 	// screen power of two correction factor, assuming the copy to _currentRender
 	// also copied an extra row and column for the bilerp
 	int	 w = backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1;
@@ -776,8 +1196,13 @@ void Uniforms::MaterialStage::Set(const shaderStage_t *pStage, const drawSurf_t 
 
 	GL_CheckErrors();
 }
+<<<<<<< HEAD
 
 void Uniforms::Interaction::SetForInteractionBasic( const drawInteraction_t *din ) {
+=======
+
+void Uniforms::Interaction::SetForInteractionBasic( const drawInteraction_t *din ) {
+>>>>>>> update to latest code
 	if ( din->surf->space != backEnd.currentSpace )
 		modelMatrix.Set( din->surf->space->modelMatrix );
 	diffuseMatrix.SetArray( 2, din->diffuseMatrix[0].ToFloatPtr() );
@@ -804,6 +1229,7 @@ void Uniforms::Interaction::SetForInteractionBasic( const drawInteraction_t *din
 	}
 }
 
+<<<<<<< HEAD
 void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 	SetForInteractionBasic( din );
 
@@ -818,6 +1244,22 @@ void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 		rimColor.Set( din->ambientRimColor );
 	} else {
 		lightOrigin.Set( din->localLightOrigin.ToVec3() );
+=======
+void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
+	SetForInteractionBasic( din );
+
+	lightProjectionFalloff.Set( din->lightProjection[0].ToFloatPtr() );
+	// set the constant color
+	diffuseColor.Set( din->diffuseColor );
+	specularColor.Set( din->specularColor );
+	viewOrigin.Set( din->localViewOrigin );
+
+	if( ambient ) {
+		lightOrigin.Set( din->worldUpLocal.ToVec3() );
+		rimColor.Set( din->ambientRimColor );
+	} else {
+		lightOrigin.Set( din->localLightOrigin.ToVec3() );
+>>>>>>> update to latest code
 		lightOrigin2.Set( backEnd.vLight->globalLightOrigin );
 	}
 
@@ -872,6 +1314,7 @@ void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 			r_softShadowsQuality.SetInteger(6);
 		}
 	}
+<<<<<<< HEAD
 
 	GL_CheckErrors();
 }
@@ -881,6 +1324,17 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		cubic.Set( 1.f );
 		lightProjectionTexture.Set( MAX_MULTITEXTURE_UNITS );
 		lightProjectionCubemap.Set( 2 );
+=======
+
+	GL_CheckErrors();
+}
+
+void Uniforms::Interaction::SetForShadows( bool translucent ) {
+	if ( backEnd.vLight->lightShader->IsCubicLight() ) {
+		cubic.Set( 1.f );
+		lightProjectionTexture.Set( MAX_MULTITEXTURE_UNITS );
+		lightProjectionCubemap.Set( 2 );
+>>>>>>> update to latest code
 		lightFalloffTexture.Set( MAX_MULTITEXTURE_UNITS );
 	} else {
 		cubic.Set( 0.f );
@@ -899,14 +1353,22 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		}
 		ssaoTexture.Set( 6 );
 		ssaoEnabled.Set( ambientOcclusion->ShouldEnableForCurrentView() );
+<<<<<<< HEAD
 		return;
+=======
+		return;
+>>>>>>> update to latest code
 	}
 
 	advanced.Set( r_interactionProgram.GetFloat() );
 
 	auto vLight = backEnd.vLight;
 	bool doShadows = !vLight->noShadows && vLight->lightShader->LightCastsShadows(); 
+<<<<<<< HEAD
 	if ( doShadows && r_shadows.GetInteger() == 2 ) {
+=======
+	if ( doShadows && r_shadows.GetInteger() == 2 ) {
+>>>>>>> update to latest code
 		// FIXME shadowmap only valid when globalInteractions not empty, otherwise garbage
 		doShadows = vLight->globalInteractions != NULL;
 	}
@@ -954,7 +1416,11 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		renderResolution.Set( globalImages->currentDepthImage->uploadWidth, globalImages->currentDepthImage->uploadHeight ); // 5055 respect r_fboResolution
 	}
 
+<<<<<<< HEAD
 	GL_CheckErrors();
+=======
+	GL_CheckErrors();
+>>>>>>> update to latest code
 }
 
 

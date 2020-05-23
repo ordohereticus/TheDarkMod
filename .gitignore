@@ -2,4 +2,8 @@
 cmake-build-*
 idlib/svnversion.h
 CMakeSettings.json
+<<<<<<< HEAD
 .svn/
+=======
+
+>>>>>>> update to latest code

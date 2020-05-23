@@ -104,13 +104,22 @@ namespace stdext {
 
 	std::string replace_all_copy(const std::string &text, const std::string &from, const std::string &to) {
 		std::string res = text;
+<<<<<<< HEAD
 		size_t pos = 0;
+=======
+		size_t pos = 0;
+>>>>>>> update to latest code
 		while (1) {
 			pos = res.find(from, pos);
 			if (pos == std::string::npos)
 				break;
+<<<<<<< HEAD
 			res.replace(pos, from.length(), to);
 			pos += to.length();
+=======
+			res.replace(pos, from.length(), to);
+			pos += to.length();
+>>>>>>> update to latest code
 		}
 		return res;
 	}

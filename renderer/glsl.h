@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*****************************************************************************
 The Dark Mod GPL Source Code
 
@@ -25,6 +26,35 @@ extern idCVarBool r_shadowMapCullFront;
 
 void AddPoissonDiskSamples( idList<idVec2> &pts, float dist );
 void GeneratePoissonDiskSampling( idList<idVec2> &pts, int wantedCount );
+=======
+/*****************************************************************************
+The Dark Mod GPL Source Code
+
+This file is part of the The Dark Mod Source Code, originally based
+on the Doom 3 GPL Source Code as published in 2011.
+
+The Dark Mod Source Code is free software: you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. For details, see LICENSE.TXT.
+
+Project: The Dark Mod (http://www.thedarkmod.com/)
+
+******************************************************************************/
+
+#pragma once
+
+#include "qgl.h"
+#include "tr_local.h"
+
+extern idCVarBool r_useGLSL;
+extern idCVarBool r_newFrob;
+extern idCVarBool r_legacyTangents;
+extern idCVarBool r_shadowMapCullFront;
+
+void AddPoissonDiskSamples( idList<idVec2> &pts, float dist );
+void GeneratePoissonDiskSampling( idList<idVec2> &pts, int wantedCount );
+>>>>>>> update to latest code
 float GetEffectiveLightRadius();
 void RB_SingleSurfaceToDepthBuffer( GLSLProgram *program, const drawSurf_t *surf );
 
@@ -54,6 +84,7 @@ namespace Attributes {
 	}
 };
 
+<<<<<<< HEAD
 namespace Uniforms {
 	//pack of uniforms defined in every shader program
 	struct Global : public GLSLUniformGroup {
@@ -61,13 +92,26 @@ namespace Uniforms {
 
 		//DEFINE_UNIFORM( mat4, projectionMatrix )
 		DEFINE_UNIFORM( mat4, modelMatrix )
+=======
+namespace Uniforms {
+	//pack of uniforms defined in every shader program
+	struct Global : public GLSLUniformGroup {
+		UNIFORM_GROUP_DEF(Global)
+
+		//DEFINE_UNIFORM( mat4, projectionMatrix )
+		DEFINE_UNIFORM( mat4, modelMatrix )
+>>>>>>> update to latest code
 		DEFINE_UNIFORM( mat4, modelViewMatrix )
 		DEFINE_UNIFORM( vec4, viewOriginLocal )
 		DEFINE_UNIFORM( mat4, textureMatrix )
 
 		//TODO: is space necessary as argument, or we can take backEnd->currentSpace ?
 		void Set( const viewEntity_t *space );
+<<<<<<< HEAD
 	};
+=======
+	};
+>>>>>>> update to latest code
 
 	struct Depth: GLSLUniformGroup {
 		UNIFORM_GROUP_DEF( Depth)
@@ -163,8 +207,13 @@ namespace Uniforms {
 	};
 
 	//pack of uniforms defined in a shader attached to "new" stage of a material
+<<<<<<< HEAD
 	struct MaterialStage : public GLSLUniformGroup {
 		UNIFORM_GROUP_DEF( MaterialStage )
+=======
+	struct MaterialStage : public GLSLUniformGroup {
+		UNIFORM_GROUP_DEF( MaterialStage )
+>>>>>>> update to latest code
 
 		DEFINE_UNIFORM( vec4, scalePotToWindow )
 		DEFINE_UNIFORM( vec4, scaleWindowToUnit )

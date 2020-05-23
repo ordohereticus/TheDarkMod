@@ -300,6 +300,7 @@ void Automation::ParseAction(ParseIn &parseIn) {
 		return;
 	}
 
+<<<<<<< HEAD
 	if (token == "guiscript") {
 		bool ok = false;
 		char name[256];
@@ -311,6 +312,19 @@ void Automation::ParseAction(ParseIn &parseIn) {
 
 	if (token == "installfm") {
 		int modsNum = gameLocal.m_MissionManager->GetNumMods();
+=======
+	if (token == "guiscript") {
+		bool ok = false;
+		char name[256];
+		int scriptNum;
+		if (sscanf(rest, "%s%d", name, &scriptNum) == 2)
+			ok = session->RunGuiScript(name, scriptNum);
+		WriteResponse(parseIn.seqno, (ok ? "done" : "error"));
+	}
+
+	if (token == "installfm") {
+		int modsNum = gameLocal.m_MissionManager->GetNumMods();
+>>>>>>> update to latest code
 
 		char name[256];
 		int argsNum = sscanf(rest, "%s", name);
@@ -336,7 +350,11 @@ void Automation::ParseAction(ParseIn &parseIn) {
 			}
 			WriteResponse(parseIn.seqno, (ok ? "done" : "error"));
 		}
+<<<<<<< HEAD
 	}
+=======
+	}
+>>>>>>> update to latest code
 
 	if (token == "sysctrl") {
 		int key, value;

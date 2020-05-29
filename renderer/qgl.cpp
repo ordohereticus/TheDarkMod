@@ -28,7 +28,6 @@ void GLimp_LoadFunctions(bool inContext) {
 }
 
 #define CHECK_FEATURE(name) GLimp_CheckExtension(#name, GLAD_##name)
-<<<<<<< HEAD
 bool GLimp_CheckExtension( const char *name, int available ) {
 	if ( !available ) {
 		common->Printf("^1X^0 - %s not found\n", name);
@@ -38,17 +37,6 @@ bool GLimp_CheckExtension( const char *name, int available ) {
 		common->Printf("^2v^0 - using %s\n", name);
 		return true;
 	}
-=======
-bool GLimp_CheckExtension( const char *name, int available ) {
-	if ( !available ) {
-		common->Printf("^1X^0 - %s not found\n", name);
-		return false;
-	}
-	else {
-		common->Printf("^2v^0 - using %s\n", name);
-		return true;
-	}
->>>>>>> update to latest code
 }
 
 void GLimp_CheckRequiredFeatures( void ) {
@@ -68,11 +56,7 @@ void GLimp_CheckRequiredFeatures( void ) {
 #endif
 	if (!reqs) {
 		common->Error("OpenGL minimum requirements not satisfied");
-<<<<<<< HEAD
 	}
-=======
-	}
->>>>>>> update to latest code
 
 
 	common->Printf( "Checking optional OpenGL extensions...\n" );
@@ -125,11 +109,6 @@ void GLimp_CheckRequiredFeatures( void ) {
 //#4953 http://forums.thedarkmod.com/topic/19979-choose-gpu/
 //hint driver to use discrete GPU on a laptop having both integrated and discrete graphics
 extern "C" {
-<<<<<<< HEAD
 	DLLEXPORT int NvOptimusEnablement = 0x00000001;
 	DLLEXPORT int AmdPowerXpressRequestHighPerformance = 0x00000001;
-=======
-	DLLEXPORT int NvOptimusEnablement = 0x00000001;
-	DLLEXPORT int AmdPowerXpressRequestHighPerformance = 0x00000001;
->>>>>>> update to latest code
 }

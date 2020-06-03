@@ -664,10 +664,10 @@ public:
 	int						GetListenerId( void ) const;
 	idSoundEmitter *		GetSoundEmitter( void ) const;
 	void					FreeSoundEmitter( bool immediate );
+	void					FSBecomeNonSolid(idEntity* ent); // grayman #5268
 
 	void					Event_PropSoundDirect( const char *soundName, float propVolMod, int msgTag ); // grayman #3355
 	void					Event_CheckSolidity(void); // grayman #5268
-
 
 	// Returns the soundprop name for the given material (e.g. "sprS_bounce_small_hard_on_soft")
 	idStr					GetSoundPropNameForMaterial(const idStr& materialName);
@@ -1304,7 +1304,6 @@ public:
 	idLocationEntity*		GetLocation( void ) const;	// grayman #3013
 	bool					CastsShadows( void ) const;	// grayman #3047
 	void					CheckCollision(idEntity* collidedWith); // grayman #3516
-	void					BecomeNonSolid(idEntity* blockingEnt);  // grayman #5268
 
 	/**
 	 * This triggers a stand-alone response (without an actual Stim) on this entity.

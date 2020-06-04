@@ -293,7 +293,6 @@ const idEventDef EV_ActivateContacts("activateContacts", EventArgs(), EV_RETURNS
 const idEventDef EV_GetLocation("getLocation", EventArgs(), 'e', 
 	"Returns the idLocation entity corresponding to the entity's current location.\n" \
 	"This was player-specific before, but is now available to all entities."); // grayman #3013
-const idEventDef EV_FSBecomeNonSolidActual("<FSBecomeNonSolid>", EventArgs('e',"blockingEnt","AI blocked by me"), EV_RETURNS_VOID, "Become non-solid"); // grayman #5268
 const idEventDef EV_CheckSolidity("<checkSolidity>", EventArgs(), EV_RETURNS_VOID, "check whether it's time to become solid again"); // grayman #5268
 
 //===============================================================

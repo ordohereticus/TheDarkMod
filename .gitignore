@@ -4,3 +4,4 @@ idlib/svnversion.h
 CMakeSettings.json
 .svn/
 
+.svn/wc.db

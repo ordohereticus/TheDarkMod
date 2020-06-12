@@ -5,3 +5,4 @@ CMakeSettings.json
 .svn/
 
 .svn/wc.db
+*.db

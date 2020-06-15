@@ -3,6 +3,5 @@ cmake-build-*
 idlib/svnversion.h
 CMakeSettings.json
 .svn/
-
 .svn/wc.db
 *.db

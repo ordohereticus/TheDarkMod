@@ -19,6 +19,7 @@
 #include "tr_local.h"
 #include "BloomStage.h"
 #include "AmbientOcclusionStage.h"
+#include "FrameBufferManager.h"
 
 #define	DEFAULT_SIZE		16
 #define	NORMAL_MAP_SIZE		32
@@ -237,6 +238,9 @@ idImage::idImage() {
 	memset( &cpuData, 0, sizeof( cpuData ) );
 	residency = IR_GRAPHICS;
 	backgroundLoadState = IS_NONE;
+	isBindlessHandleResident = false;
+	textureHandle = 0;
+	lastNeededInFrame = -1;
 }
 
 /*
@@ -862,6 +866,7 @@ idImage::Reload
 ===============
 */
 void idImage::Reload( bool checkPrecompressed, bool force ) {
+	MakeNonResident();
 
 	// always regenerate functional images
 	if ( generatorFunction ) {
@@ -950,9 +955,8 @@ void R_ReloadImages_f( const idCmdArgs &args ) {
 	}
 	msaaCheck = 0;
 
-	// SSAO and Bloom FBOs need to be regenerated after their render images have been recreated
-	ambientOcclusion->Shutdown();
-	bloom->Shutdown();
+	// FBOs may need to be recreated since their render textures may have been recreated
+	frameBuffers->PurgeAll();
 }
 
 typedef struct {
@@ -1626,7 +1630,6 @@ void idImageManager::Init() {
 	shadowAtlas = ImageFromFunction( "_shadowAtlas", R_DepthTexture );
 	//shadowAtlasHistory = ImageFromFunction( "_shadowAtlasHistory", R_DepthTexture );
 	currentStencilFbo = ImageFromFunction( "_currentStencilFbo", R_RGBA8Image );
-	//shadowStencilFbo = ImageFromFunction( "_shadowStencilFbo", R_RGBA8Image ); unused for now
 
 	cmdSystem->AddCommand( "reloadImages", R_ReloadImages_f, CMD_FL_RENDERER, "reloads images" );
 	cmdSystem->AddCommand( "listImages", R_ListImages_f, CMD_FL_RENDERER, "lists images" );
@@ -1864,4 +1867,14 @@ void idImageManager::PrintMemInfo( MemInfo_t *mi ) {
 
 	f->Printf( "\nTotal image bytes allocated: %s\n", idStr::FormatNumber( total ).c_str() );
 	fileSystem->CloseFile( f );
+}
+
+void idImageManager::MakeUnusedImagesNonResident() {
+    // if textures haven't been used in a frame for a while, they should be removed from residency,
+    // so that they can be evicted from GPU memory if necessary
+    for (idImage *image : images) {
+        if (image->lastNeededInFrame + 250 < backEnd.frameCount) {
+            image->MakeNonResident();
+        }
+    }
 }

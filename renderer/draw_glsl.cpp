@@ -36,6 +36,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "GLSLProgram.h"
 #include "GLSLProgramManager.h"
 #include "AmbientOcclusionStage.h"
+#include "FrameBufferManager.h"
 
 #if defined(_MSC_VER) && _MSC_VER >= 1800 && !defined(DEBUG)
 //#pragma optimize("t", off) // duzenko: used in release to enforce breakpoints in inlineable code. Please do not remove
@@ -69,6 +70,20 @@ static void ChooseInteractionProgram() {
 	currrentInteractionShader->Activate();
 	currrentInteractionShader->GetUniformGroup<Uniforms::Interaction>()->RGTC.Set( 1 ); // FIXME remove the RGTC uniform
 	GL_CheckErrors();
+}
+
+static void BindShadowTexture() {
+	if ( backEnd.vLight->shadowMapIndex ) {
+		GL_SelectTexture( 6 );
+		globalImages->shadowAtlas->Bind();
+	} else {
+		GL_SelectTexture( 6 );
+		globalImages->currentDepthImage->Bind();
+		GL_SelectTexture( 7 );
+
+		globalImages->shadowDepthFbo->Bind();
+		qglTexParameteri( GL_TEXTURE_2D, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX );
+	}
 }
 
 /*
@@ -113,7 +128,7 @@ void RB_GLSL_DrawInteraction( const drawInteraction_t *din ) {
 	din->specularImage->Bind();
 
 	if ( !backEnd.vLight->lightShader->IsAmbientLight() && ( r_softShadowsQuality.GetBool() && !backEnd.viewDef->IsLightGem() || backEnd.vLight->shadows == LS_MAPS ) )
-		FB_BindShadowTexture();
+		BindShadowTexture();
 
 	// draw it
 	RB_DrawElementsWithCounters( din->surf );
@@ -190,14 +205,14 @@ void RB_GLSL_DrawLight_Stencil() {
 		backEnd.currentScissor = backEnd.vLight->scissorRect;
 
 		if ( r_useScissor.GetBool() ) {
-			GL_Scissor( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
+			GL_ScissorVidSize( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
 			            backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
 			            backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
 			            backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
 		}
 
 		if ( useShadowFbo ) {
-			FB_ToggleShadow( true );
+			frameBuffers->EnterShadowStencil();
 		}
 		qglClear( GL_STENCIL_BUFFER_BIT );
 	} else {
@@ -208,31 +223,31 @@ void RB_GLSL_DrawLight_Stencil() {
 
 	RB_StencilShadowPass( backEnd.vLight->globalShadows );
 	if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
-		FB_ResolveShadowAA();
+		frameBuffers->ResolveShadowStencilAA();
 	}
 
 	const bool NoSelfShadows = true; // don't delete - debug check for low-poly "round" models casting ugly shadows on themselves
 
 	if ( NoSelfShadows ) {
 		if ( useShadowFbo ) {
-			FB_ToggleShadow( false );
+			frameBuffers->LeaveShadowStencil();
 		}
 		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
 
 		if ( useShadowFbo ) {
-			FB_ToggleShadow( true );
+			frameBuffers->EnterShadowStencil();
 		}
 	}
 	programManager->stencilShadowShader->Activate();
 
 	RB_StencilShadowPass( backEnd.vLight->localShadows );
 	if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
-		FB_ResolveShadowAA();
+		frameBuffers->ResolveShadowStencilAA();
 	}
 
 
 	if ( useShadowFbo ) {
-		FB_ToggleShadow( false );
+		frameBuffers->LeaveShadowStencil();
 	}
 
 	if ( !NoSelfShadows ) {
@@ -265,7 +280,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	GL_PROFILE( "GLSL_DrawInteractions_ShadowMap" );
 
 	GL_CheckErrors();
-	FB_ToggleShadow( true );
+	frameBuffers->EnterShadowMap();
 
 	programManager->shadowMapShader->Activate();
 	GL_SelectTexture( 0 );
@@ -295,7 +310,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 		qglEnable( GL_CLIP_PLANE0 + i );
 	for ( ; surf; surf = surf->nextOnLight ) {
 		if ( surf->dsFlags & DSF_SHADOW_MAP_IGNORE ) 
-			continue;    // this flag is set by entities with parms.noShadow in R_LinkLightSurf (candles, torches, etc)
+			continue;    // this flag is set by entities with parms.noShadow in R_PrepareLightSurf (candles, torches, etc)
 
 		/*float customOffset = surf->space->entityDef->parms.shadowMapOffset + surf->material->GetShadowMapOffset();
 		if ( customOffset != 0 )
@@ -323,7 +338,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	backEnd.currentSpace = NULL; // or else conflicts with qglLoadMatrixf
 	GLSLProgram::Deactivate();
 
-	FB_ToggleShadow( false );
+	frameBuffers->LeaveShadowMap();
 
 	GL_CheckErrors();
 }
@@ -606,6 +621,7 @@ void Attributes::Default::Bind(GLSLProgram *program) {
 	program->BindAttribLocation(TexCoord, "attr_TexCoord");
 	program->BindAttribLocation(Tangent, "attr_Tangent");
 	program->BindAttribLocation(Bitangent, "attr_Bitangent");
+	program->BindAttribLocation(DrawId, "attr_DrawId");
 }
 
 //I expect this function should be enough for setting up vertex attrib arrays in most cases..

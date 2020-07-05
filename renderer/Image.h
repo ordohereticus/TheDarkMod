@@ -170,6 +170,9 @@ public:
 	// May start a background image read.
 	void		Bind();
 
+	// checks if the texture is currently bound to the specified texture unit
+	bool		IsBound( int textureUnit ) const;
+
 	// deletes the texture object, but leaves the structure so it can be reloaded
 	void		PurgeImage( bool purgeCpuData = true );
 
@@ -184,7 +187,8 @@ public:
 	void		GenerateCubeImage( const byte *pic[6], int size,
 	                               textureFilter_t filter, bool allowDownSize,
 	                               textureDepth_t depth );
-	void		GenerateAttachment( int width, int height, GLint format );
+	void		GenerateAttachment( int width, int height, GLenum format,
+									GLenum filter = GL_LINEAR, GLenum wrapMode = GL_CLAMP_TO_EDGE );
 
 	void		UploadScratch( const byte *pic, int width, int height );
 
@@ -255,6 +259,16 @@ public:
 	imageBlock_t		cpuData;				// CPU-side usable image data (usually absent)
 	imageResidency_t	residency;				// determines whether cpuData and/or texnum should be valid
 	imageLoadState_t	backgroundLoadState;	// state of background loading (usually disabled)
+
+	// START bindless texture support
+private:
+	GLuint64			textureHandle;
+	bool				isBindlessHandleResident;
+public:
+	int					lastNeededInFrame;
+	void				MakeResident();
+	void				MakeNonResident();
+	GLuint64			BindlessHandle();
 };
 
 
@@ -371,7 +385,6 @@ public:
 	idImage *			shadowAtlas;
 	//idImage *			shadowAtlasHistory;
 	idImage *			currentStencilFbo; // these two are only used on Intel since no one else support separate stencil
-	idImage *			shadowStencilFbo;
 
 	//--------------------------------------------------------
 
@@ -395,6 +408,8 @@ public:
 	float				textureLODBias;
 
 	idImage *			imageHashTable[FILE_HASH_SIZE];
+
+	void				MakeUnusedImagesNonResident();
 };
 
 extern idImageManager	*globalImages;		// pointer to global list for the rest of the system

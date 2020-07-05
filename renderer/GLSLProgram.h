@@ -36,9 +36,12 @@ public:
 
 	void BindAttribLocation( unsigned int location, const char *attribName );
 	void BindDefaultAttribLocations();
+	void BindUniformBlockLocation( unsigned int location, const char *blockName );
 
 	bool Link();
 	bool Validate();
+
+	void InitFromFiles( const char *vertexFile, const char *fragmentFile, const idDict &defines = idDict() );
 
 	void Activate();
 	static void Deactivate();
@@ -79,6 +82,7 @@ private:
 	GLSLUniformGroup *&FindUniformGroup( const std::type_index &type );
 	void LoadAndAttachShader( GLint shaderType, const char *sourceFile, const idDict &defines );
 	GLuint CompileShader( GLint shaderType, const char *sourceFile, const idDict &defines );
+	void SetDefaultUniformBlockBindings();
 };
 
 #endif

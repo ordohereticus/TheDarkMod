@@ -1,0 +1,8 @@
+#pragma once
+
+#define TDM_INSTALLER_LOG_FILENAME "tdm_installer.log"
+#define TDM_INSTALLER_CONFIG_FILENAME "tdm_installer.ini"
+#define TDM_INSTALLER_LOCAL_MANIFEST "manifest.iniz"
+
+#define TDM_INSTALLER_ZIPSYNC_DIR ".zipsync"
+#define TDM_INSTALLER_MANICACHE_SUBDIR "mani"

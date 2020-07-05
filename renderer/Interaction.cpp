@@ -17,6 +17,7 @@
 #pragma hdrstop
 
 #include "tr_local.h"
+#include "Interaction.h"
 
 /*
 ===========================================================================
@@ -29,6 +30,14 @@ idInteraction implementation
 // FIXME: use private allocator for srfCullInfo_t
 idCVar r_useInteractionTriCulling("r_useInteractionTriCulling", "1", CVAR_RENDERER | CVAR_BOOL, "1 = cull interactions tris");
 idCVarInt r_singleShadowEntity( "r_singleShadowEntity", "-1", CVAR_RENDERER, "suppress all but one shadowing entity" );
+
+void idInteraction::PrepareLightSurf( linkLocation_t link, const srfTriangles_t *tri, const viewEntity_s *space,
+		const idMaterial *material, const idScreenRect &scissor, bool viewInsideShadow ) {
+
+	drawSurf_t *drawSurf = R_PrepareLightSurf( tri, space, material, scissor, viewInsideShadow );
+	drawSurf->nextOnLight = surfsToLink[link];
+	surfsToLink[link] = drawSurf;
+}
 
 /*
 ================
@@ -837,7 +846,8 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 
 	// if it doesn't contact the light frustum, none of the surfaces will
 	if ( R_CullModelBoundsToLight( lightDef, bounds, entityDef->modelRenderMatrix ) ) {
-		MakeEmpty();
+		//MakeEmpty();
+		flagMakeEmpty = true;
 		return;
 	}
 
@@ -966,7 +976,8 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 
 	// if none of the surfaces generated anything, don't even bother checking?
 	if ( !interactionGenerated ) {
-		MakeEmpty();
+		//MakeEmpty();
+		flagMakeEmpty = true;
 	}
 }
 
@@ -1130,6 +1141,34 @@ bool idInteraction::IsPotentiallyVisible( idScreenRect &shadowScissor ) {
 	return true;
 }
 
+void idInteraction::LinkPreparedSurfaces() {
+	for (int i = 0; i < MAX_LOCATIONS; ++i) {
+		if (surfsToLink[i] == nullptr) {
+			continue;
+		}
+
+		drawSurf_t **link = nullptr;
+		switch (i) {
+		case INTERACTION_TRANSLUCENT: link = &lightDef->viewLight->translucentInteractions; break;
+		case INTERACTION_LOCAL: link = &lightDef->viewLight->localInteractions; break;
+		case INTERACTION_GLOBAL: link = &lightDef->viewLight->globalInteractions; break;
+		case SHADOW_LOCAL: link = &lightDef->viewLight->localShadows; break;
+		case SHADOW_GLOBAL: link = &lightDef->viewLight->globalShadows; break;
+		}
+
+		drawSurf_t *surf = surfsToLink[i];
+		drawSurf_t *end = surf;
+		while (end->nextOnLight) {
+			end = end->nextOnLight;
+		}
+
+		end->nextOnLight = *link;
+		*link = surf;
+
+		surfsToLink[i] = nullptr;
+	}
+}
+
 /*
 ==================
 idInteraction::AddActiveInteraction
@@ -1150,6 +1189,8 @@ void idInteraction::AddActiveInteraction( void ) {
 
 	vLight = lightDef->viewLight;
 	vEntity = entityDef->viewEntity;
+
+	flagMakeEmpty = false;
 
 	// Try to cull the whole interaction away in a multitide of ways
 	// Also, reduce scissor rect of the interaction if possible
@@ -1234,13 +1275,13 @@ void idInteraction::AddActiveInteraction( void ) {
 
 					// there will only be localSurfaces if the light casts shadows and there are surfaces with NOSELFSHADOW
 					if ( sint->shader->Coverage() == MC_TRANSLUCENT && sint->shader->ReceivesLighting() ) {
-						R_LinkLightSurf( &vLight->translucentInteractions, lightTris,
+						PrepareLightSurf( INTERACTION_TRANSLUCENT, lightTris,
 						                 vEntity, shader, lightScissor, false );
 					} else if ( !lightDef->parms.noShadows && sint->shader->TestMaterialFlag( MF_NOSELFSHADOW ) ) {
-						R_LinkLightSurf( &vLight->localInteractions, lightTris,
+						PrepareLightSurf( INTERACTION_LOCAL, lightTris,
 						                 vEntity, shader, lightScissor, false );
 					} else {
-						R_LinkLightSurf( &vLight->globalInteractions, lightTris,
+						PrepareLightSurf( INTERACTION_GLOBAL, lightTris,
 						                 vEntity, shader, lightScissor, false );
 					}
 				}
@@ -1307,10 +1348,10 @@ void idInteraction::AddActiveInteraction( void ) {
 			bool inside = R_PotentiallyInsideInfiniteShadow( sint->ambientTris, localViewOrigin, localLightOrigin );
 
 			if ( sint->shader->TestMaterialFlag( MF_NOSELFSHADOW ) ) {
-				R_LinkLightSurf( &vLight->localShadows,
+				PrepareLightSurf( SHADOW_LOCAL,
 				                 shadowTris, vEntity, NULL, shadowScissor, inside );
 			} else {
-				R_LinkLightSurf( &vLight->globalShadows,
+				PrepareLightSurf( SHADOW_GLOBAL,
 				                 shadowTris, vEntity, NULL, shadowScissor, inside );
 			}
 		}

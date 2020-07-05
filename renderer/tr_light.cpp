@@ -14,18 +14,12 @@
 ******************************************************************************/
 
 #include "precompiled.h"
-#include <set>
-#include <unordered_set>
 #pragma hdrstop
 
 #include "../idlib/geometry/sys_intrinsics.h"
 #include "tr_local.h"
-#include "Model_local.h" // Added in #3878 (soft particles) to allow r_AddAmbientDrawSurfs to access info about particles to 
-						 // pass to the backend without bloating the modelSurface_t struct used everywhere. That struct is the only
-						 // output of ALL dynamic model updates, and it's a POD (non-initialized), so adding the info to it would 
-						 // mean initializing it, or adding code to every single dynamic model update function. Model_local.h 
-						 // has no #defines and adds no includes of its own, and tr_light.cpp already has sight of DeclParticle.h 
-						 // so I reckon this extra dependency is lightweight and justified. -- SteveL #3878
+#include "Model_local.h"
+#include "Profiling.h"
 
 #define CHECK_BOUNDS_EPSILON			1.0f
 
@@ -603,10 +597,10 @@ idStr idInteractionTable::Stats() const {
 
 /*
 =================
-R_LinkLightSurf
+R_PrepareLightSurf
 =================
 */
-void R_LinkLightSurf( drawSurf_t **link, const srfTriangles_t *tri, const viewEntity_t *space,
+drawSurf_t *R_PrepareLightSurf( const srfTriangles_t *tri, const viewEntity_t *space,
 		const idMaterial *material, const idScreenRect &scissor, bool viewInsideShadow ) {
 	if ( !space ) {
 		space = &tr.viewDef->worldSpace;
@@ -657,11 +651,7 @@ void R_LinkLightSurf( drawSurf_t **link, const srfTriangles_t *tri, const viewEn
 		}
 	}
 
-	Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
-	// actually link it in
-	drawSurf->nextOnLight = *link;
-	*link = drawSurf;
-	Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
+	return drawSurf;
 }
 
 /*
@@ -823,6 +813,8 @@ and the viewEntitys due to game movement
 =================
 */
 void R_AddLightSurfaces( void ) {
+	FRONTEND_PROFILE( "R_AddLightSurfaces" );
+	
 	viewLight_t			*vLight;
 	idRenderLightLocal	*light;
 	viewLight_t			**ptr;
@@ -950,7 +942,10 @@ void R_AddLightSurfaces( void ) {
 			if ( !vertexCache.CacheIsCurrent( tri->indexCache ) ) {
 				tri->indexCache = vertexCache.AllocIndex( tri->indexes, ALIGN( tri->numIndexes * sizeof( tri->indexes[0] ), INDEX_CACHE_ALIGN ) );
 			}
-			R_LinkLightSurf( &vLight->globalShadows, tri, NULL, NULL, vLight->scissorRect, true /* FIXME ? */ );
+			drawSurf_t *surf = R_PrepareLightSurf( tri, NULL, NULL, vLight->scissorRect, true /* FIXME ? */ );
+			// actually link it in
+			surf->nextOnLight = vLight->globalShadows;
+			vLight->globalShadows = surf;
 		}
 	}
 }
@@ -1007,6 +1002,7 @@ it and any necessary overlays
 ===================
 */
 idRenderModel *R_EntityDefDynamicModel( idRenderEntityLocal *def ) {
+	idScopedCriticalSection lock (def->mutex);
 
 	bool callbackUpdate = false;
 
@@ -1119,49 +1115,12 @@ static void R_FindSurfaceLights( drawSurf_t& drawSurf ) {
 	}
 }
 
-/*
-=================
-R_AddDrawSurf
-=================
-*/
-void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const renderEntity_t *renderEntity,
-					const idMaterial *material, const idScreenRect &scissor, const float soft_particle_radius )
-{
-	drawSurf_t		*drawSurf;
-	const float		*shaderParms;
-	static float	refRegs[MAX_EXPRESSION_REGISTERS];	// don't put on stack, or VC++ will do a page touch
-	float			generatedShaderParms[MAX_ENTITY_SHADER_PARMS];
-
-	drawSurf = (drawSurf_t *)R_FrameAlloc( sizeof( *drawSurf ) );
-	drawSurf->CopyGeo( tri );
-	drawSurf->space = space;
-	drawSurf->material = material;
-	drawSurf->scissorRect = scissor;
-	drawSurf->sort = material->GetSort() + tr.sortOffset;
-	drawSurf->dsFlags = 0;
-	if( scissor.IsEmpty() )
-		drawSurf->dsFlags |= DSF_SHADOW_MAP_ONLY;
-	if ( soft_particle_radius != -1.0f ) {	// #3878
-		drawSurf->dsFlags |= DSF_SOFT_PARTICLE;
-		drawSurf->particle_radius = soft_particle_radius;
-	} else {
-		drawSurf->particle_radius = 0.0f;
-	}
-	if ( auto eDef = space->entityDef ) {
-		if ( eDef->parms.noShadow || !material || !material->SurfaceCastsShadow() ) {
-			drawSurf->dsFlags |= DSF_SHADOW_MAP_IGNORE;		// multi-light shader optimization
-			tr.pc.c_noshadowSurfs++;
-		}
-		if ( !r_ignore.GetBool() && eDef->parms.sortOffset )
-			drawSurf->sort += eDef->parms.sortOffset;
-	}
-
+void R_AddSurfaceToView( drawSurf_t *drawSurf ) {
 	// bumping this offset each time causes surfaces with equal sort orders to still
 	// deterministically draw in the order they are added
+	drawSurf->sort += tr.sortOffset;
 	tr.sortOffset += 0.000001f;
-
 	// if it doesn't fit, resize the list
-	Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
 	if ( tr.viewDef->numDrawSurfs == tr.viewDef->maxDrawSurfs ) {
 		drawSurf_t	**old = tr.viewDef->drawSurfs;
 		int			count;
@@ -1180,7 +1139,48 @@ void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const 
 	}
 	tr.viewDef->drawSurfs[tr.viewDef->numDrawSurfs] = drawSurf;
 	tr.viewDef->numDrawSurfs++;
-	Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
+}
+
+/*
+=================
+R_AddDrawSurf
+=================
+*/
+void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const renderEntity_t *renderEntity,
+					const idMaterial *material, const idScreenRect &scissor, const float soft_particle_radius, bool deferred )
+{
+	drawSurf_t		*drawSurf;
+	const float		*shaderParms;
+	static float	refRegs[MAX_EXPRESSION_REGISTERS];	// don't put on stack, or VC++ will do a page touch
+	float			generatedShaderParms[MAX_ENTITY_SHADER_PARMS];
+
+	drawSurf = (drawSurf_t *)R_FrameAlloc( sizeof( *drawSurf ) );
+	drawSurf->CopyGeo( tri );
+	drawSurf->space = space;
+	drawSurf->material = material;
+	drawSurf->scissorRect = scissor;
+	drawSurf->sort = material->GetSort();
+	drawSurf->dsFlags = 0;
+	if( scissor.IsEmpty() )
+		drawSurf->dsFlags |= DSF_SHADOW_MAP_ONLY;
+	if ( soft_particle_radius != -1.0f ) {	// #3878
+		drawSurf->dsFlags |= DSF_SOFT_PARTICLE;
+		drawSurf->particle_radius = soft_particle_radius;
+	} else {
+		drawSurf->particle_radius = 0.0f;
+	}
+	if ( auto eDef = space->entityDef ) {
+		if ( eDef->parms.noShadow || !material || !material->SurfaceCastsShadow() ) {
+			drawSurf->dsFlags |= DSF_SHADOW_MAP_IGNORE;		// multi-light shader optimization
+			tr.pc.c_noshadowSurfs++;
+		}
+		if ( !r_ignore.GetBool() && eDef->parms.sortOffset )
+			drawSurf->sort += eDef->parms.sortOffset;
+	}
+
+	if (!deferred) {
+		R_AddSurfaceToView( drawSurf );
+	}
 
 	// process the shader expressions for conditionals / color / texcoords
 	const float	*constRegs = material->ConstantRegisters();
@@ -1259,27 +1259,37 @@ void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const 
 	}
 
 	if ( gui ) {
-		// force guis on the fast time
+		/*// force guis on the fast time
 		const float oldFloatTime = tr.viewDef->floatTime;
 		const int oldTime = tr.viewDef->renderView.time;
 
 		tr.viewDef->floatTime = game->GetTimeGroupTime( 1 ) * 0.001f;
-		tr.viewDef->renderView.time = game->GetTimeGroupTime( 1 );
+		tr.viewDef->renderView.time = game->GetTimeGroupTime( 1 );*/
 
 		idBounds ndcBounds;
 
 		if ( !R_PreciseCullSurface( drawSurf, ndcBounds ) ) {
-			// did we ever use this to forward an entity color to a gui that didn't set color?
-//			memcpy( tr.guiShaderParms, shaderParms, sizeof( tr.guiShaderParms ) );
-			Sys_EnterCriticalSection( CRITICAL_SECTION_TWO );
-			R_RenderGuiSurf( gui, drawSurf );
-			Sys_LeaveCriticalSection( CRITICAL_SECTION_TWO );
+			if (!deferred) {
+				// did we ever use this to forward an entity color to a gui that didn't set color?
+	//			memcpy( tr.guiShaderParms, shaderParms, sizeof( tr.guiShaderParms ) );
+				R_RenderGuiSurf( gui, drawSurf );
+			}
+		} else {
+			gui = nullptr;
 		}
-		tr.viewDef->floatTime = oldFloatTime;
-		tr.viewDef->renderView.time = oldTime;
+		/*tr.viewDef->floatTime = oldFloatTime;
+		tr.viewDef->renderView.time = oldTime;*/
 	}
 
 	R_FindSurfaceLights( *drawSurf ); // multi shader data
+
+	if (deferred) {
+		preparedSurf_t *preparedSurf = (preparedSurf_t*)R_FrameAlloc( sizeof(preparedSurf_t) );
+		preparedSurf->surf = drawSurf;
+		preparedSurf->gui = gui;
+		preparedSurf->next = space->preparedSurfs;
+		const_cast<viewEntity_t *>(space)->preparedSurfs = preparedSurf;
+	}
 
 	// we can't add subviews at this point, because that would
 	// increment tr.viewCount, messing up the rest of the surface
@@ -1447,7 +1457,7 @@ static void R_AddAmbientDrawsurfs( viewEntity_t *vEntity ) {
 			}
 
 			// add the surface for drawing
-			R_AddDrawSurf( tri, vEntity, &vEntity->entityDef->parms, shader, vEntity->scissorRect, particle_radius );
+			R_AddDrawSurf( tri, vEntity, &vEntity->entityDef->parms, shader, vEntity->scissorRect, particle_radius, true );
 
 			// ambientViewCount is used to allow light interactions to be rejected
 			// if the ambient surface isn't visible at all
@@ -1499,7 +1509,7 @@ bool R_CullXray( idRenderEntityLocal& def ) {
 	}
 }
 
-void R_AddSingleModel( viewEntity_t* vEntity ) {
+void R_AddSingleModel( viewEntity_t *vEntity ) {
 	idInteraction* inter, * next;
 	idRenderModel* model;
 
@@ -1519,10 +1529,12 @@ void R_AddSingleModel( viewEntity_t* vEntity ) {
 		// intersect with the portal crossing scissor rectangle
 		vEntity->scissorRect.Intersect( scissorRect );
 
-		if ( r_showEntityScissors.GetBool() ) {
+		if ( r_showEntityScissors.GetBool() && !r_useParallelAddModels.GetBool() ) {
 			R_ShowColoredScreenRect( vEntity->scissorRect, def.index );
 		}
 	}
+
+	/* this time stuff is inherently not thread-safe, but apparently also not used in TDM
 	float oldFloatTime = 0.0f;
 	int oldTime = 0;
 
@@ -1534,7 +1546,7 @@ void R_AddSingleModel( viewEntity_t* vEntity ) {
 
 		tr.viewDef->floatTime = game->GetTimeGroupTime( def.parms.timeGroup ) * 0.001;
 		tr.viewDef->renderView.time = game->GetTimeGroupTime( def.parms.timeGroup );
-	}
+	}*/
 
 	if ( R_CullXray( def) ) 
 		return;
@@ -1548,10 +1560,10 @@ void R_AddSingleModel( viewEntity_t* vEntity ) {
 	if ( !vEntity->scissorRect.IsEmpty() || R_HasVisibleShadows( vEntity ) ) {
 		model = R_EntityDefDynamicModel( &def );
 		if ( model == NULL || model->NumSurfaces() <= 0 ) {
-			if ( def.parms.timeGroup ) {
+			/*if ( def.parms.timeGroup ) {
 				tr.viewDef->floatTime = oldFloatTime;
 				tr.viewDef->renderView.time = oldTime;
-			}
+			}*/
 			return;
 		}
 		R_AddAmbientDrawsurfs( vEntity );
@@ -1574,9 +1586,29 @@ void R_AddSingleModel( viewEntity_t* vEntity ) {
 		inter->AddActiveInteraction();
 	}
 
-	if ( def.parms.timeGroup ) {
+	/*if ( def.parms.timeGroup ) {
 		tr.viewDef->floatTime = oldFloatTime;
 		tr.viewDef->renderView.time = oldTime;
+	}*/
+}
+
+void R_AddPreparedSurfaces( viewEntity_t *vEntity ) {
+	for (preparedSurf_t *it = vEntity->preparedSurfs; it; it = it->next) {
+		R_AddSurfaceToView( it->surf );
+
+		if (it->gui) {
+			R_RenderGuiSurf( it->gui, it->surf );
+		}
+	}
+	vEntity->preparedSurfs = nullptr;
+	
+	idInteraction *inter, *next;
+	for ( inter = vEntity->entityDef->firstInteraction; inter != NULL && !inter->IsEmpty(); inter = next ) {
+		next = inter->entityNext;
+		if (inter->flagMakeEmpty) {
+			inter->MakeEmpty();
+		}
+		inter->LinkPreparedSurfaces();
 	}
 }
 
@@ -1592,22 +1624,27 @@ two or more lights.
 ===================
 */
 void R_AddModelSurfaces( void ) {
+	FRONTEND_PROFILE( "R_AddModelSurfaces ")
+	
 	// clear the ambient surface list
 	tr.viewDef->numDrawSurfs = 0;
 	tr.viewDef->maxDrawSurfs = 0;	// will be set to INITIAL_DRAWSURFS on R_AddDrawSurf
 
-	// go through each entity that is either visible to the view, or to
-	// any light that intersects the view (for shadows)
 	if ( r_useParallelAddModels.GetBool() ) {
-		for ( viewEntity_t* vEntity = tr.viewDef->viewEntitys; vEntity != NULL; vEntity = vEntity->next ) {
+		for ( viewEntity_t *vEntity = tr.viewDef->viewEntitys; vEntity; vEntity = vEntity->next ) {
 			tr.frontEndJobList->AddJob( (jobRun_t)R_AddSingleModel, vEntity );
 		}
 		tr.frontEndJobList->Submit();
 		tr.frontEndJobList->Wait();
-	} else
+	} else {
 		for ( viewEntity_t *vEntity = tr.viewDef->viewEntitys; vEntity; vEntity = vEntity->next ) {
 			R_AddSingleModel( vEntity );
 		}
+	}
+	// actually add prepared surfaces in single-threaded mode since this can't be parallelized due to shared state
+	for ( viewEntity_t *vEntity = tr.viewDef->viewEntitys; vEntity; vEntity = vEntity->next ) {
+		R_AddPreparedSurfaces( vEntity );
+	}
 }
 
 REGISTER_PARALLEL_JOB( R_AddSingleModel, "R_AddSingleModel" );
@@ -1618,6 +1655,8 @@ R_RemoveUnecessaryViewLights
 =====================
 */
 void R_RemoveUnecessaryViewLights( void ) {
+	FRONTEND_PROFILE( "R_RemoveUnnecessaryViewLights" )
+
 	viewLight_t		*vLight;
 
 	// go through each visible light

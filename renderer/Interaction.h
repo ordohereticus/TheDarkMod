@@ -68,6 +68,8 @@ typedef struct {
 
 class idRenderEntityLocal;
 class idRenderLightLocal;
+struct drawSurf_s;
+struct viewEntity_s;
 
 class idInteraction {
 public:
@@ -104,6 +106,7 @@ public:
 	// free the interaction surfaces
 	void					FreeSurfaces( void );
 
+	bool flagMakeEmpty;
 	// makes the interaction empty for when the light and entity do not actually intersect
 	// all empty interactions are linked at the end of the light's and entity's interaction list
 	void					MakeEmpty( void );
@@ -122,11 +125,13 @@ public:
 	int						MemoryUsed( void );
 
 	// makes sure all necessary light surfaces and shadow surfaces are created, and
-	// calls R_LinkLightSurf() for each one
+	// calls R_PrepareLightSurf() for each one
 	void					AddActiveInteraction( void );
 	// returns false if the whole interaction can be omitted from rendering (culled away)
 	// also writes screen scissor bounding the visible part of interaction
 	bool					IsPotentiallyVisible( idScreenRect &shadowScissor );
+
+	void					LinkPreparedSurfaces();
 
 private:
 	enum {
@@ -138,7 +143,6 @@ private:
 
 	int						dynamicModelFrameCount;	// so we can tell if a callback model animated
 
-private:
 	// actually create the interaction
 	void					CreateInteraction( const idRenderModel *model );
 
@@ -152,6 +156,19 @@ private:
 	// determine the minimum scissor rect that will include the interaction shadows
 	// projected to the bounds of the light
 	idScreenRect			CalcInteractionScissorRectangle( const idFrustum &viewFrustum );
+
+	enum linkLocation_t {
+		INTERACTION_TRANSLUCENT = 0,
+		INTERACTION_LOCAL,
+		INTERACTION_GLOBAL,
+		SHADOW_LOCAL,
+		SHADOW_GLOBAL,
+		MAX_LOCATIONS
+	};
+	drawSurf_s *			surfsToLink[MAX_LOCATIONS] = { nullptr };
+
+	void PrepareLightSurf( linkLocation_t link, const srfTriangles_t *tri, const viewEntity_s *space,
+		const idMaterial *material, const idScreenRect &scissor, bool viewInsideShadow );
 };
 
 

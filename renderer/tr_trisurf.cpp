@@ -501,6 +501,8 @@ void R_FreeStaticTriSurf( srfTriangles_t *tri ) {
 #ifdef ID_DEBUG_MEMORY
 		R_CheckStaticTriSurfMemory( tri );
 #endif
+
+		idScopedCriticalSection lock(frame->deferredFreeMutex);
 		tri->nextDeferredFree = NULL;
 		if ( frame->lastDeferredFreeTriSurf ) {
 			frame->lastDeferredFreeTriSurf->nextDeferredFree = tri;

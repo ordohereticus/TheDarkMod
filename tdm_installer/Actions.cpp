@@ -9,9 +9,11 @@
 #include "Utils.h"
 #include "ZipSync.h"
 #include "Constants.h"
+#include "ScanState.h"
 #include "State.h"
 
-//TODO: move to better place?
+//=======================================================================================
+
 static std::vector<std::string> CollectTdmZipPaths(const std::string &installDir) {
 	std::vector<std::string> res;
 	auto allPaths = stdext::recursive_directory_enumerate(installDir);
@@ -21,7 +23,7 @@ static std::vector<std::string> CollectTdmZipPaths(const std::string &installDir
 			std::string relPath = ZipSync::PathAR::FromAbs(absPath, installDir).rel;
 			bool managed = false;
 
-			//common caregories:
+			//common categories:
 			if (stdext::istarts_with(relPath, "tdm_") && stdext::iends_with(relPath, ".pk4"))
 				managed = true;		//e.g. tdm_ai_base01.pk4
 			if (stdext::istarts_with(relPath, "tdm_") && stdext::iends_with(relPath, ".zip"))
@@ -45,6 +47,46 @@ static std::vector<std::string> CollectTdmZipPaths(const std::string &installDir
 	}
 	return res;
 }
+
+static std::vector<std::string> CollectTdmUnpackedFilesToDelete(const std::string &installDir) {
+	static const char *TDM_EXECUTABLES[] = {
+		//Windows executables
+		"TheDarkMod.exe",
+		"TheDarkModx64.exe",
+		//Windows DLLs (2.06)
+		"ExtLibs.dll",
+		"ExtLibsx64.dll",
+		//Linux executables
+		"thedarkmod.x86",
+		"thedarkmod.x64",
+		//game DLLs (2.05 and before)
+		"gamex86.dll",
+		"gamex86.so"
+	};
+	//note: let's leave all the rest intact
+	std::vector<std::string> res;
+	auto allPaths = stdext::recursive_directory_enumerate(installDir);
+	for (const auto &entry : allPaths) {
+		if (stdext::is_regular_file(entry)) {
+			std::string absPath = entry.string();
+			std::string relPath = ZipSync::PathAR::FromAbs(absPath, installDir).rel;
+
+			bool shouldDelete = false;
+			for (const char *s : TDM_EXECUTABLES)
+				if (relPath == s)
+					shouldDelete = true;
+
+			if (shouldDelete)
+				res.push_back(absPath);
+		}
+	}
+	return res;
+}
+
+static const char *ZIPS_TO_UNPACK[] = {"tdm_shared_stuff.zip"};
+static int ZIPS_TO_UNPACK_NUM = sizeof(ZIPS_TO_UNPACK) / sizeof(ZIPS_TO_UNPACK[0]);
+
+//=======================================================================================
 
 void Actions::RestartWithInstallDir(const std::string &installDir) {
 	g_logger->infof("Restarting TDM installer in directory: %s", installDir.c_str());
@@ -168,29 +210,6 @@ void Actions::ReadConfigFile(bool download, ZipSync::ProgressIndicator *progress
 
 void Actions::ScanInstallDirectoryIfNecessary(bool force, ZipSync::ProgressIndicator *progress) {
 	g_state->_localManifest.Clear();
-	bool doScan = false;
-	if (force) {
-		g_logger->infof("Do scanning because forced by user");
-		doScan = true;
-	}
-	else {
-		try {
-			g_logger->infof("Trying to read local %s", TDM_INSTALLER_LOCAL_MANIFEST);
-			ZipSync::IniData ini = ZipSync::ReadIniFile(TDM_INSTALLER_LOCAL_MANIFEST);
-			g_state->_localManifest.ReadFromIni(ini, OsUtils::GetCwd());
-		}
-		catch(const std::exception &) {
-			g_logger->infof("Failed to read it, fallback to scanning");
-			doScan = true;
-			g_state->_localManifest.Clear();
-		}
-		g_logger->infof("Local manifest read successfully");
-		//TODO: check validity?
-	}
-	if (!doScan) {
-		g_logger->infof("");
-		return;
-	}
 
 	std::string root = OsUtils::GetCwd();
 	g_logger->infof("Cleaning temporary files");	//possibly remained from previous run
@@ -198,6 +217,50 @@ void Actions::ScanInstallDirectoryIfNecessary(bool force, ZipSync::ProgressIndic
 
 	g_logger->infof("Collecting set of already existing TDM-owned zips");
 	std::vector<std::string> managedZips = CollectTdmZipPaths(root);
+	std::vector<std::string> managedZipsAndMani = managedZips;
+	managedZipsAndMani.push_back((stdext::path(root) / TDM_INSTALLER_LOCAL_MANIFEST).string());
+
+	bool doScan = true;
+	g_state->_lastInstalledVersion.clear();
+	try {
+		//read last scan state, also last installed version
+		g_logger->infof("Trying to read %s", TDM_INSTALLER_LASTSCAN_PATH);
+		ZipSync::IniData ini = ZipSync::ReadIniFile(TDM_INSTALLER_LASTSCAN_PATH);
+		ScanState lastScan = ScanState::ReadFromIni(ini);
+		g_logger->infof("Last scan state read successfully");
+		g_state->_lastInstalledVersion = lastScan.GetVersion();
+
+		//generate current scan state
+		ScanState nowScan = ScanState::ScanZipSet(managedZipsAndMani, root);
+
+		//read existing local manifest
+		g_logger->infof("Trying to read local %s", TDM_INSTALLER_LOCAL_MANIFEST);
+		ini = ZipSync::ReadIniFile(TDM_INSTALLER_LOCAL_MANIFEST);
+		g_state->_localManifest.ReadFromIni(ini, OsUtils::GetCwd());
+		g_logger->infof("Local manifest read successfully");
+
+		if (nowScan.NotChangedSince(lastScan)) {
+			doScan = false;
+			g_logger->infof("Zips seem to have not changed since last time");
+		}
+		else {
+			g_logger->infof("Perform scan because something changed since last run");
+		}
+	}
+	catch(const std::exception &) {
+		g_logger->infof("Failed to read it, fallback to scanning");
+		g_state->_localManifest.Clear();
+		doScan = true;
+	}
+	if (force) {
+		g_logger->infof("Do scanning because forced by user");
+		doScan = true;
+	}
+
+	if (!doScan) {
+		g_logger->infof("");
+		return;
+	}
 
 	g_logger->infof("Installation currently contains of %d TDM-owned zips", managedZips.size());
 	uint64_t totalSize = 0;
@@ -212,6 +275,13 @@ void Actions::ScanInstallDirectoryIfNecessary(bool force, ZipSync::ProgressIndic
 	g_logger->infof("Saving results of analysis to manifest file");
 	ZipSync::WriteIniFile((root + "/manifest.iniz").c_str(), manifest.WriteToIni());
 	g_state->_localManifest = std::move(manifest);
+
+	g_logger->infof("Saving current scan at %s", TDM_INSTALLER_LASTSCAN_PATH);
+	ScanState nowScan = ScanState::ScanZipSet(managedZipsAndMani, root, g_state->_lastInstalledVersion);
+	ZipSync::IniData ini = nowScan.WriteToIni();
+	stdext::create_directories(stdext::path(TDM_INSTALLER_LASTSCAN_PATH).parent_path());
+	ZipSync::WriteIniFile(TDM_INSTALLER_LASTSCAN_PATH, ini);
+
 	g_logger->infof("");
 }
 
@@ -384,9 +454,35 @@ void Actions::PerformInstallRepack(ZipSync::ProgressIndicator *progress) {
 	g_logger->infof("");
 }
 
+static void UnpackZip(unzFile zf) {
+	SAFE_CALL(unzGoToFirstFile(zf));
+	while (1) {
+		char currFilename[4096];
+		SAFE_CALL(unzGetCurrentFileInfo(zf, NULL, currFilename, sizeof(currFilename), NULL, 0, NULL, 0));
+		ZipSync::StdioFileHolder outfile(currFilename, "wb");
+
+		SAFE_CALL(unzOpenCurrentFile(zf));
+		char buffer[64<<10];
+		while (1) {
+			int read = unzReadCurrentFile(zf, buffer, sizeof(buffer));
+			ZipSyncAssert(read >= 0);
+			if (read == 0)
+				break;
+			int wr = fwrite(buffer, 1, read, outfile);
+			ZipSyncAssert(read == wr);
+		}
+		SAFE_CALL(unzCloseCurrentFile(zf));
+
+		int res = unzGoToNextFile(zf);
+		if (res == UNZ_END_OF_LIST_OF_FILE)
+			break;   //finished
+		SAFE_CALL(res);
+	}
+}
 void Actions::PerformInstallFinalize(ZipSync::ProgressIndicator *progress) {
 	ZipSync::UpdateProcess *updater = g_state->_updater.get();
 	ZipSyncAssert(updater);
+	std::string root = OsUtils::GetCwd();
 
 	if (progress)
 		progress->Update(0.0, "Saving resulting manifest...");
@@ -398,10 +494,41 @@ void Actions::PerformInstallFinalize(ZipSync::ProgressIndicator *progress) {
 		progress->Update(0.5, "Manifest saved");
 
 	if (progress)
-		progress->Update(0.5, "Cleaning directory...");
-	ZipSync::DoClean(OsUtils::GetCwd());
+		progress->Update(0.5, "Cleaning temporary zips...");
+	ZipSync::DoClean(root);
 	if (progress)
-		progress->Update(1.0, "Cleaning finished");
+		progress->Update(0.6, "Cleaning finished");
+
+	if (progress)
+		progress->Update(0.6, "Saving " TDM_INSTALLER_LASTSCAN_PATH "...");
+	std::vector<std::string> managedZipsAndMani = CollectTdmZipPaths(root);
+	managedZipsAndMani.push_back((stdext::path(root) / TDM_INSTALLER_LOCAL_MANIFEST).string());
+	ScanState nowScan = ScanState::ScanZipSet(managedZipsAndMani, root, g_state->_versionRefreshed);
+	ZipSync::IniData ini = nowScan.WriteToIni();
+	stdext::create_directories(stdext::path(TDM_INSTALLER_LASTSCAN_PATH).parent_path());
+	ZipSync::WriteIniFile(TDM_INSTALLER_LASTSCAN_PATH, ini);
+	if (progress)
+		progress->Update(0.7, "Saved properly");
+
+	if (progress)
+		progress->Update(0.7, "Deleting old files...");
+	std::vector<std::string> delFiles = CollectTdmUnpackedFilesToDelete(root);
+	for (const std::string &fn : delFiles)
+		stdext::remove(fn);
+	if (progress)
+		progress->Update(0.8, "Deleting finished");
+
+	for (int i = 0; i < ZIPS_TO_UNPACK_NUM; i++) {
+		const char *fn = ZIPS_TO_UNPACK[i];
+		ZipSync::UnzFileHolder zf(unzOpen(fn));
+		if (!zf)
+			continue;
+		if (progress)
+			progress->Update(0.8 + 0.2 * (i+0)/ZIPS_TO_UNPACK_NUM, formatMessage("Unpacking %s...", fn).c_str());
+		UnpackZip(zf);
+		if (progress)
+			progress->Update(0.8 + 0.2 * (i+1)/ZIPS_TO_UNPACK_NUM, "Unpacking finished");
+	}
 
 	g_logger->infof("");
 }

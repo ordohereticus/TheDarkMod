@@ -7,6 +7,8 @@
 #include "GuiPageVersion.h"
 #include "GuiPageConfirm.h"
 #include "GuiPageInstall.h"
+#include "ProgressIndicatorGui.h"
+#include <FL/fl_ask.H>
 
 
 void cb_Settings_ButtonReset(Fl_Widget *self) {
@@ -24,6 +26,10 @@ void cb_Settings_ButtonReset(Fl_Widget *self) {
 	g_Version_OutputAddedSize->value("");
 	g_Version_OutputRemovedSize->value("");
 	g_Version_OutputDownloadSize->value("");
+}
+
+void cb_RaiseInterruptFlag(Fl_Widget *self) {
+	ProgressIndicatorGui::Interrupt();
 }
 
 //============================================================
@@ -97,8 +103,18 @@ void GuiInitAll() {
 	g_Confirm_ButtonBack->callback(cb_Confirm_ButtonBack);
 	g_Confirm_ButtonStart->callback(cb_Confirm_ButtonStart);
 
+	g_Install_ButtonCancel->callback(cb_RaiseInterruptFlag);
 	g_Install_ButtonClose->callback(cb_Install_ButtonClose);
 }
 
-void GuiUpdateAll(void*) {
+void GuiLoaded(void*) {
+	if (OsUtils::HasElevatedPrivilegesWindows()) {
+		int idx = fl_choice(
+			"The installer was run \"as admin\". This is strongly discouraged!\n"
+			"If you continue, admin rights will most likely be necessary to play the game.",
+			"I know what I'm doing", "Exit", nullptr
+		);
+		if (idx == 1)
+			exit(0);
+	}
 }

@@ -48,22 +48,7 @@ static std::vector<std::string> CollectTdmZipPaths(const std::string &installDir
 	return res;
 }
 
-static std::vector<std::string> CollectTdmUnpackedFilesToDelete(const std::string &installDir) {
-	static const char *TDM_EXECUTABLES[] = {
-		//Windows executables
-		"TheDarkMod.exe",
-		"TheDarkModx64.exe",
-		//Windows DLLs (2.06)
-		"ExtLibs.dll",
-		"ExtLibsx64.dll",
-		//Linux executables
-		"thedarkmod.x86",
-		"thedarkmod.x64",
-		//game DLLs (2.05 and before)
-		"gamex86.dll",
-		"gamex86.so"
-	};
-	//note: let's leave all the rest intact
+static std::vector<std::string> CollectFilesInList(const std::string &installDir, const char *filenames[]) {
 	std::vector<std::string> res;
 	auto allPaths = stdext::recursive_directory_enumerate(installDir);
 	for (const auto &entry : allPaths) {
@@ -71,17 +56,47 @@ static std::vector<std::string> CollectTdmUnpackedFilesToDelete(const std::strin
 			std::string absPath = entry.string();
 			std::string relPath = ZipSync::PathAR::FromAbs(absPath, installDir).rel;
 
-			bool shouldDelete = false;
-			for (const char *s : TDM_EXECUTABLES)
-				if (relPath == s)
-					shouldDelete = true;
+			bool matches = false;
+			for (int i = 0; filenames[i]; i++)
+				if (relPath == filenames[i])
+					matches = true;
 
-			if (shouldDelete)
+			if (matches)
 				res.push_back(absPath);
 		}
 	}
 	return res;
 }
+
+static const char *TDM_DELETE_ON_INSTALL[] = {
+	//Windows executables
+	"TheDarkMod.exe",
+	"TheDarkModx64.exe",
+	//Windows DLLs (2.06)
+	"ExtLibs.dll",
+	"ExtLibsx64.dll",
+	//Linux executables
+	"thedarkmod.x86",
+	"thedarkmod.x64",
+	//game DLLs (2.05 and before)
+	"gamex86.dll",
+	"gamex86.so",
+	nullptr
+};
+static std::vector<std::string> CollectTdmUnpackedFilesToDelete(const std::string &installDir) {
+	return CollectFilesInList(installDir, TDM_DELETE_ON_INSTALL);
+}
+
+static const char *TDM_MARK_EXECUTABLE[] = {
+	//Linux executables
+	"thedarkmod.x86",
+	"thedarkmod.x64",
+	nullptr
+};
+static std::vector<std::string> CollectTdmUnpackedFilesMarkExecutable(const std::string &installDir) {
+	return CollectFilesInList(installDir, TDM_MARK_EXECUTABLE);
+}
+
 
 static const char *ZIPS_TO_UNPACK[] = {"tdm_shared_stuff.zip"};
 static int ZIPS_TO_UNPACK_NUM = sizeof(ZIPS_TO_UNPACK) / sizeof(ZIPS_TO_UNPACK[0]);
@@ -107,10 +122,54 @@ void Actions::RestartWithInstallDir(const std::string &installDir) {
 	OsUtils::ReplaceAndRestartExecutable(newExePath, "");
 }
 
+std::vector<std::string> Actions::CheckSpaceAndPermissions(const std::string &installDir) {
+	std::vector<std::string> warnings;
+
+	stdext::path currPath = installDir;
+	while (!stdext::is_directory(currPath)) {
+		//note: this is possible is user entered arbitrary path and clicked "Create and Restart"
+		auto parentPath = currPath.parent_path();
+		ZipSyncAssertF(parentPath != currPath, "Invalid installation directory %s: no ancestor directory exists", installDir.c_str());
+		currPath = parentPath;
+	};
+	std::string lastExistingDir = currPath.string();
+
+	std::string checkPath = (stdext::path(lastExistingDir) / "__permissions_test").string();
+	g_logger->infof("Test writing file %s", checkPath.c_str());
+	FILE *f = fopen(checkPath.c_str(), "wt");
+	ZipSyncAssertF(f,
+		"Cannot write anything in installation directory \"%s\".\n"
+		"Please choose a directory where files can be created without admin rights.\n"
+		"Directory \"C:\\Games\\TheDarkMod\" is a usually good.\n"
+		"Do NOT try to install TheDarkMod into Program Files! ",
+		installDir.c_str()
+	);
+	fclose(f);
+	stdext::remove(checkPath);
+
+	g_logger->infof("Checking for free space at %s", lastExistingDir.c_str());
+	uint64_t freeSpace = OsUtils::GetAvailableDiskSpace(lastExistingDir) >> 20;
+	ZipSyncAssertF(freeSpace >= TDM_INSTALLER_FREESPACE_MINIMUM, 
+		"Only %0.0lf MB of free space is available in installation directory.\n"
+		"Installer surely won't work without at least %0.0lf MB of free space!",
+		freeSpace / 1.0, TDM_INSTALLER_FREESPACE_MINIMUM / 1.0
+	);
+	if (freeSpace < TDM_INSTALLER_FREESPACE_RECOMMENDED) {
+		warnings.push_back(ZipSync::formatMessage(
+			"Only %0.2lf GB of free space is available in installation directory.\n"
+			"Installation or update can fail due to lack of space.\n"
+			"Better free at least %0.2lf GB and restart updater.\n",
+			freeSpace / 1024.0, TDM_INSTALLER_FREESPACE_RECOMMENDED / 1024.0
+		));
+	}
+	return warnings;
+}
+
 void Actions::StartLogFile() {
 	//from now on, write logs to a logfile in CWD
 	delete g_logger;
 	g_logger = new LoggerTdm();
+	g_logger->infof("Install directory: %s", OsUtils::GetCwd().c_str());
 }
 
 bool Actions::NeedsSelfUpdate(ZipSync::ProgressIndicator *progress) {
@@ -289,23 +348,25 @@ Actions::VersionInfo Actions::RefreshVersionInfo(const std::string &targetVersio
 	g_logger->infof("Evaluating version %s", targetVersion.c_str());
 	g_state->_updater.reset();
 
-	std::vector<std::string> addProvidedVersions = g_state->_config.GetAdditionalProvidedVersions(targetVersion);
-	std::string targetManifestUrl = g_state->_config.ChooseManifestUrl(targetVersion);
-	std::vector<std::string> providManifestUrls;
-	for (int i = 0; i < addProvidedVersions.size(); i++)
-		providManifestUrls.push_back(g_state->_config.ChooseManifestUrl(addProvidedVersions[i]));
+	//note: target manifest always comes from trusted source
+	std::string targetManifestUrl = g_state->_config.ChooseManifestUrl(targetVersion, true);
+	std::vector<std::string> providedVersions = g_state->_config.GetProvidedVersions(targetVersion);
+	std::vector<std::string> providedManifestUrls;
+	for (int i = 0; i < providedVersions.size(); i++)
+		providedManifestUrls.push_back(g_state->_config.ChooseManifestUrl(providedVersions[i]));
 
 	g_logger->infof("Target manifest at %s", targetManifestUrl.c_str());
-	g_logger->infof("Version %s needs files from %d other versions", targetVersion.c_str(), int(addProvidedVersions.size()));
-	for (int i = 0; i < addProvidedVersions.size(); i++)
-		g_logger->debugf("  %s at %s", addProvidedVersions[i].c_str(), providManifestUrls[i].c_str());
+	g_logger->infof("Version %s needs files from %d versions", targetVersion.c_str(), int(providedVersions.size()));
+	for (int i = 0; i < providedVersions.size(); i++)
+		g_logger->debugf("  %s at %s", providedVersions[i].c_str(), providedManifestUrls[i].c_str());
 
 	//see which manifests were not loaded in this updater session
+	std::string targetVersionTrusted = "trusted::" + targetVersion;
 	std::vector<std::string> downloadedVersions;
 	std::vector<std::string> downloadedManifestUrls;
-	for (int i = -1; i < (int)addProvidedVersions.size(); i++) {
-		std::string ver = (i < 0 ? targetVersion : addProvidedVersions[i]);
-		std::string url = (i < 0 ? targetManifestUrl : providManifestUrls[i]);
+	for (int i = -1; i < (int)providedVersions.size(); i++) {
+		std::string ver = (i < 0 ? targetVersionTrusted : providedVersions[i]);
+		std::string url = (i < 0 ? targetManifestUrl : providedManifestUrls[i]);
 		if (g_state->_loadedManifests.count(ver))
 			continue;
 		downloadedVersions.push_back(ver);
@@ -380,13 +441,10 @@ Actions::VersionInfo Actions::RefreshVersionInfo(const std::string &targetVersio
 		g_logger->debugf("  %s", ownedZips[i].c_str());
 
 	//gather full manifests for update
-	ZipSync::Manifest targetMani = g_state->_loadedManifests[targetVersion];
-	ZipSync::Manifest providMani = targetMani.Filter([](const ZipSync::FileMetainfo &mf) -> bool {
-		return mf.location != ZipSync::FileLocation::Nowhere;
-	});
-	providMani.AppendManifest(g_state->_localManifest);
-	for (const std::string &ver : addProvidedVersions) {
-		const ZipSync::Manifest &mani = g_state->_loadedManifests[ver];
+	ZipSync::Manifest targetMani = g_state->_loadedManifests.at(targetVersionTrusted);
+	ZipSync::Manifest providMani = g_state->_localManifest;
+	for (const std::string &ver : providedVersions) {
+		const ZipSync::Manifest &mani = g_state->_loadedManifests.at(ver);
 		ZipSync::Manifest added = mani.Filter([](const ZipSync::FileMetainfo &mf) -> bool {
 			return mf.location != ZipSync::FileLocation::Nowhere;
 		});
@@ -524,11 +582,20 @@ void Actions::PerformInstallFinalize(ZipSync::ProgressIndicator *progress) {
 		if (!zf)
 			continue;
 		if (progress)
-			progress->Update(0.8 + 0.2 * (i+0)/ZIPS_TO_UNPACK_NUM, formatMessage("Unpacking %s...", fn).c_str());
+			progress->Update(0.8 + 0.1 * (i+0)/ZIPS_TO_UNPACK_NUM, formatMessage("Unpacking %s...", fn).c_str());
 		UnpackZip(zf);
 		if (progress)
-			progress->Update(0.8 + 0.2 * (i+1)/ZIPS_TO_UNPACK_NUM, "Unpacking finished");
+			progress->Update(0.8 + 0.1 * (i+1)/ZIPS_TO_UNPACK_NUM, "Unpacking finished");
 	}
 
+	if (progress)
+		progress->Update(0.9, "Mark as executable...");
+	std::vector<std::string> execFiles = CollectTdmUnpackedFilesMarkExecutable(root);
+	for (const std::string &fn : execFiles)
+		OsUtils::MarkAsExecutable(fn);
+	if (progress)
+		progress->Update(1.0, "Executables marked");
+
+	progress->Update(1.0, "Finalization complete");
 	g_logger->infof("");
 }

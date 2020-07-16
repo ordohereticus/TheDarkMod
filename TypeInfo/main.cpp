@@ -88,6 +88,7 @@ public:
 };
 
 idCVar com_developer( "developer", "0", CVAR_BOOL|CVAR_SYSTEM, "developer mode" );
+idCVar com_fpexceptions;
 
 idCommonLocal		commonLocal;
 idCommon *			common = &commonLocal;
@@ -230,6 +231,7 @@ cpuid_t			idSysLocal::GetProcessorId( void ) { return (cpuid_t)0; }
 const char *	idSysLocal::GetProcessorString( void ) { return ""; }
 void			idSysLocal::FPU_SetFTZ( bool enable ) {}
 void			idSysLocal::FPU_SetDAZ( bool enable ) {}
+void			idSysLocal::FPU_SetExceptions( bool enable ) {}
 
 bool			idSysLocal::LockMemory( void *ptr, int bytes ) { return false; }
 bool			idSysLocal::UnlockMemory( void *ptr, int bytes ) { return false; }

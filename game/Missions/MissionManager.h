@@ -41,39 +41,13 @@ struct MissionScreenshot
 	idStr	serverRelativeUrl;
 
 	// Get the local image file name without path, e.g. "monastery01.jpg"
-	idStr GetLocalFilename() const
-	{
-		idStr temp;
-		serverRelativeUrl.ExtractFileName(temp);
-
-		idStr ext;
-		temp.ExtractFileExtension(ext);
-
-		temp.StripTrailingOnce(ext);
-		temp.StripTrailingOnce(".");
-
-		// Locally We save screenshots as JPG
-		return temp + ".jpg";
-	}
+	idStr GetLocalFilename() const;
 
 	// Returns the image filename including extension
-	idStr GetRemoteFilename() const
-	{
-		idStr temp;
-		serverRelativeUrl.ExtractFileName(temp);
-		
-		return temp;
-	}
+	idStr GetRemoteFilename() const;
 
 	// Returns the file extension of the server file (lowercase, without dot, e.g. "png")
-	idStr GetRemoteFileExtension() const
-	{
-		idStr temp;
-		serverRelativeUrl.ExtractFileExtension(temp);
-		temp.ToLower();
-
-		return temp;
-	}
+	idStr GetRemoteFileExtension() const;
 };
 typedef std::shared_ptr<MissionScreenshot> MissionScreenshotPtr;
 
@@ -119,56 +93,16 @@ struct DownloadableMod
 	// End Initially empty variables
 
 	// Default constructor
-	DownloadableMod() :
-		id(-1), // invalid ID
-		type(Single),
-		version(1),
-		isUpdate(false),
-        needsL10NpackDownload(false),	// gnartsch
-		detailsLoaded(false)
-	{}
+	DownloadableMod();
+	~DownloadableMod();
 
 	// Static sort compare functor, sorting by mod title
 	typedef DownloadableMod* DownloadableModPtr;
 
-	static int SortCompareTitle(const DownloadableModPtr* a, const DownloadableModPtr* b)
-	{
-		//alexdiru 4499
-		idStr aName = common->Translate((*a)->title);
-		idStr prefix = "";
-		idStr suffix = "";
-		common->GetI18N()->MoveArticlesToBack(aName, prefix, suffix);
-		if (!suffix.IsEmpty())
-		{
-			// found, remove prefix and append suffix
-			aName.StripLeadingOnce(prefix.c_str());
-			aName += suffix;
-		}
-
-		idStr bName = common->Translate((*b)->title);
-		prefix = "";
-		suffix = "";
-		common->GetI18N()->MoveArticlesToBack(bName, prefix, suffix);
-		if (!suffix.IsEmpty())
-		{
-			// found, remove prefix and append suffix
-			bName.StripLeadingOnce(prefix.c_str());
-			bName += suffix;
-		}
-
-		return aName.Icmp(bName);
-	}
+	static int SortCompareTitle(const DownloadableModPtr* a, const DownloadableModPtr* b);
 
 	// Gets the local path to the screenshot image (relative to darkmod path, e.g. fms/_missionshots/preview_monst02.jpg)
-	idStr GetLocalScreenshotPath(int screenshotNum) const
-	{
-		assert(screenshotNum >= 0 && screenshotNum < screenshots.Num());
-
-		return cv_tdm_fm_path.GetString() + 
-			   idStr(TMP_MISSION_SCREENSHOT_FOLDER) + "/" + 
-			   TMP_MISSION_SCREENSHOT_PREFIX +
-			   screenshots[screenshotNum]->GetLocalFilename();
-	}
+	idStr GetLocalScreenshotPath(int screenshotNum) const;
 };
 // Use raw pointers in the DownloadableModList
 // to allow the use of the qsort algorithm as used in idStr::Sort()

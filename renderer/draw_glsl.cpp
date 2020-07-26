@@ -836,58 +836,7 @@ void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 		lightOrigin.Set( din->localLightOrigin.ToVec3() );
 		lightOrigin2.Set( backEnd.vLight->globalLightOrigin );
 	}
-
-	//stgatilov #5044: see also
-	//  https://forums.thedarkmod.com/index.php?/topic/20205-5044-rgb-value-in-specular-stage/
-	static idCVar r_testSpecularFix(
-		"r_testSpecularFix", "1", CVAR_RENDERER | CVAR_INTEGER,
-		"Use specular color instead of diffuse color to modulate specular term in \"enhanced\" interaction.\n"
-		"  1 --- apply the change as described: use specular color\n"
-		"  0 --- enable old way: use diffuse color\n"
-		" -1 --- toggle between two ways every second"
-	);
-	bool testSpecularFix_CurrentValue;
-	if (r_testSpecularFix.GetInteger() < 0) {
-		static bool currValue = false;
-		static uint64_t lastChange = Sys_GetTimeMicroseconds();
-		int64_t deltaTime = Sys_GetTimeMicroseconds() - lastChange;
-		if (deltaTime > 1000000) {
-			lastChange += deltaTime;
-			currValue ^= 1;
-			common->Printf("testSpecularFix set to %d\n", int(currValue));
-		}
-		testSpecularFix_CurrentValue = currValue;
-	}
-	else {
-		testSpecularFix_CurrentValue = r_testSpecularFix.GetBool();
-	}
-	testSpecularFix.Set(testSpecularFix_CurrentValue);
-
-	//stgatilov #4825: see also
-	//  http://forums.thedarkmod.com/topic/19139-nonsmooth-graphics-due-to-bumpmapping/
-	static idCVar r_testBumpmapLightTogglingFix(
-		"r_testBumpmapLightTogglingFix", "0", CVAR_RENDERER | CVAR_BOOL,
-		"Reduce light toggling due to difference between bumpmapped normal and interpolated normal in \"enhanced\" interaction.\n"
-	);
-	testBumpmapLightTogglingFix.Set(r_testBumpmapLightTogglingFix.GetBool());
-
-	//stgatilov #4825: fix against self-shadowing
-	static idCVar r_testStencilSelfShadowFix(
-		"r_testStencilSelfShadowFix", "0", CVAR_RENDERER | CVAR_BOOL,
-		"Hack around self-shadowing issues with stencil shadows.\n"
-	);
-	testStencilSelfShadowFix.Set(r_testStencilSelfShadowFix.GetBool());
-	if (r_testStencilSelfShadowFix.GetBool() && r_shadows.GetInteger() == 1) {
-		//turn on cvars this hack depends on
-		if (!r_lightAllBackFaces.GetInteger()) {
-			common->Printf("Forcing: r_lightAllBackFaces 1\n");
-			r_lightAllBackFaces.SetInteger(1);
-		}
-		if (r_softShadowsQuality.GetInteger() == 0) {
-			common->Printf("Forcing: r_softShadowsQuality 6\n");
-			r_softShadowsQuality.SetInteger(6);
-		}
-	}
+	useBumpmapLightTogglingFix.Set(r_useBumpmapLightTogglingFix.GetBool());
 
 	GL_CheckErrors();
 }

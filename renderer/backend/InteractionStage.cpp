@@ -63,8 +63,7 @@ namespace {
 		DEFINE_UNIFORM( vec3, globalLightOrigin )
 
 		DEFINE_UNIFORM( int, advanced )
-		DEFINE_UNIFORM( int, testSpecularFix )
-		DEFINE_UNIFORM( int, testBumpmapLightTogglingFix )
+		DEFINE_UNIFORM( int, useBumpmapLightTogglingFix )
 		DEFINE_UNIFORM( int, cubic )
 		DEFINE_UNIFORM( float, gamma )
 		DEFINE_UNIFORM( float, minLevel )
@@ -73,7 +72,6 @@ namespace {
 		DEFINE_UNIFORM( int, shadows )
 		DEFINE_UNIFORM( int, softShadowsQuality )
 		DEFINE_UNIFORM( float, softShadowsRadius )
-		DEFINE_UNIFORM( int, testStencilSelfShadowFix )
 		DEFINE_UNIFORM( vec4, shadowRect )
 		DEFINE_UNIFORM( int, shadowMapCullFront )
 		DEFINE_UNIFORM( sampler, stencilTexture )
@@ -293,8 +291,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 	uniforms->advanced.Set( r_interactionProgram.GetInteger() );
 	uniforms->gamma.Set( r_ambientGamma.GetFloat() );
 	uniforms->minLevel.Set( r_ambientMinLevel.GetFloat() );
-	uniforms->testSpecularFix.Set( 1 );
-	uniforms->testBumpmapLightTogglingFix.Set( 0 );
+	uniforms->useBumpmapLightTogglingFix.Set( r_useBumpmapLightTogglingFix.GetBool() );
 	uniforms->ssaoEnabled.Set( ambientOcclusion->ShouldEnableForCurrentView() ? 1 : 0 );
 
 	bool doShadows = !vLight->noShadows && vLight->lightShader->LightCastsShadows(); 

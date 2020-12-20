@@ -169,7 +169,7 @@ idCVar r_showDefs( "r_showDefs", "0", CVAR_RENDERER | CVAR_BOOL, "report the num
 idCVar r_showTrace( "r_showTrace", "0", CVAR_RENDERER | CVAR_INTEGER, "show the intersection of an eye trace with the world", idCmdSystem::ArgCompletion_Integer<0, 2> );
 idCVar r_showIntensity( "r_showIntensity", "0", CVAR_RENDERER | CVAR_BOOL, "draw the screen colors based on intensity, red = 0, green = 128, blue = 255" );
 idCVar r_showImages( "r_showImages", "0", CVAR_RENDERER | CVAR_INTEGER, "1 = show all images instead of rendering, 2 = show in proportional size", 0, 2, idCmdSystem::ArgCompletion_Integer<0, 2> );
-idCVar com_smp( "com_smp", "0", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "enable SMP" );
+idCVar com_smp( "com_smp", "1", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "run game modeling and renderer frontend in second thread, parallel to renderer backend" );
 idCVar r_showSmp( "r_showSmp", "0", CVAR_RENDERER | CVAR_BOOL, "show which end (front or back) is blocking" );
 idCVar r_logSmpTimings( "r_logSmpTimings", "0", CVAR_RENDERER | CVAR_BOOL, "log timings for frontend and backend rendering" );
 idCVarInt r_showLights( "r_showLights", "0", CVAR_RENDERER, "1 = just print volumes numbers, highlighting ones covering the view, 2 = also draw planes of each volume, 3 = also draw edges of each volume"/*, 0, 3, idCmdSystem::ArgCompletion_Integer<0, 3> */);
@@ -224,9 +224,7 @@ idCVar r_dedicatedAmbient( "r_dedicatedAmbient", "1", CVAR_RENDERER | CVAR_BOOL,
 
 // 2016-2018 additions by duzenko
 idCVar r_useAnonreclaimer( "r_useAnonreclaimer", "0", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "test anonreclaimer patch" );
-idCVarBool r_useGLSL( "r_useGLSL", "1", CVAR_RENDERER | CVAR_ARCHIVE, "Use GLSL shaders instead of ARB2" );
 //stgatilov: temporary cvar, to be removed when ARB->GLSL migration is complete and settled
-idCVar r_uniformTransforms( "r_uniformTransforms", "1", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "Use uniform variables in shaders for vertex transformations instead of the deprecated ftransform" );
 idCVar r_glCoreProfile( "r_glCoreProfile", "2", CVAR_RENDERER | CVAR_ARCHIVE,
 	"Which profile of OpenGL to use:\n"
 	"  0: compatibility profile\n"
@@ -377,10 +375,6 @@ void R_InitOpenGL( void ) {
 	common->Printf( "OpenGL vendor: %s\n", glConfig.vendor_string );
 	common->Printf( "OpenGL renderer: %s\n", glConfig.renderer_string );
 	common->Printf( "OpenGL version: %s %s\n", glConfig.version_string, GLAD_GL_ARB_compatibility ? "compatibility" : "core" );
-	if ( !r_uniformTransforms.GetBool() && !GLAD_GL_ARB_compatibility ) {
-		common->Printf( "Uniform transforms mandatory on core contexts\n" );
-		r_uniformTransforms.SetBool( true );
-	}
 
 	// recheck all the extensions
 	GLimp_CheckRequiredFeatures();
@@ -401,9 +395,7 @@ void R_InitOpenGL( void ) {
 	}
 
 	cmdSystem->AddCommand( "reloadGLSLprograms", R_ReloadGLSLPrograms_f, CMD_FL_RENDERER, "reloads GLSL programs" );
-	cmdSystem->AddCommand( "reloadARBprograms", R_ReloadARBPrograms_f, CMD_FL_RENDERER, "reloads ARB programs" );
 
-	R_ReloadARBPrograms_f( idCmdArgs() );
 	R_ReloadGLSLPrograms_f( idCmdArgs() );
 
 	// allocate the vertex array range or vertex objects

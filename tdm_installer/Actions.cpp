@@ -12,6 +12,16 @@
 #include "StoredState.h"
 #include "State.h"
 
+
+//small wrapper to share common initialization
+struct Downloader : public ZipSync::Downloader {
+	Downloader(ZipSync::ProgressIndicator *progress = nullptr) {
+		SetUserAgent(TDM_INSTALLER_USERAGENT);
+		if (progress)
+			SetProgressCallback(progress->GetDownloaderCallback());
+	}
+};
+
 //=======================================================================================
 
 static std::vector<std::string> CollectTdmZipPaths(const std::string &installDir) {
@@ -205,9 +215,7 @@ bool Actions::NeedsSelfUpdate(ZipSync::ProgressIndicator *progress) {
 
 	//fast pass: download hash of updater
 	g_logger->infof("Checking installer executable at %s...", exeUrl.c_str());
-	ZipSync::Downloader downloaderPreliminary;
-	if (progress)
-		downloaderPreliminary.SetProgressCallback(progress->GetDownloaderCallback());
+	Downloader downloaderPreliminary(progress);
 	ZipSync::HashDigest desiredHash = ZipSync::GetHashesOfRemoteChecksummedZips(downloaderPreliminary, {exeUrl})[0];
 	g_logger->infof("Downloaded bytes: %lld", downloaderPreliminary.TotalBytesDownloaded());
 	g_logger->infof("Hash of installer on server is %s", desiredHash.Hex().c_str());
@@ -219,9 +227,7 @@ bool Actions::NeedsSelfUpdate(ZipSync::ProgressIndicator *progress) {
 	else {
 		//second pass: download full manifests when necessary
 		g_logger->infof("Downloading installer executable from %s...", exeUrl.c_str());
-		ZipSync::Downloader downloaderFull;
-		if (progress)
-			downloaderFull.SetProgressCallback(progress->GetDownloaderCallback());
+		Downloader downloaderFull(progress);
 		std::vector<std::string> outPaths = {exeZipPath};
 		ZipSync::DownloadChecksummedZips(downloaderFull, {exeUrl}, {desiredHash}, {}, outPaths);
 		g_logger->infof("Downloaded bytes: %lld", downloaderFull.TotalBytesDownloaded());
@@ -254,15 +260,13 @@ void Actions::ReadConfigFile(bool download, ZipSync::ProgressIndicator *progress
 
 	if (download) {
 		g_logger->infof("Downloading config file from %s...", TDM_INSTALLER_CONFIG_URL);
-		ZipSync::Downloader downloader;
+		Downloader downloader(progress);
 		auto DataCallback = [](const void *data, int len) {
 			ZipSync::StdioFileHolder f(TDM_INSTALLER_CONFIG_FILENAME, "wb");
 			int res = fwrite(data, 1, len, f);
 			ZipSyncAssert(res == len);
 		};
 		downloader.EnqueueDownload(ZipSync::DownloadSource(TDM_INSTALLER_CONFIG_URL), DataCallback);
-		if (progress)
-			downloader.SetProgressCallback(progress->GetDownloaderCallback());
 		downloader.DownloadAll();
 		g_logger->infof("Downloaded bytes: %lld", downloader.TotalBytesDownloaded());
 	}
@@ -383,98 +387,131 @@ Actions::VersionInfo Actions::RefreshVersionInfo(const std::string &targetVersio
 	if (!customManifestUrl.empty())
 		g_logger->infof("With custom manifest URL: %s", customManifestUrl.c_str());
 
-	std::string targetVersionCached;
-	std::string targetManifestUrl;
+	//these arrays are same-indexed
+	//0-th manifest is "target" one, all the others are "provided"
+	std::vector<std::string> versions;
+	std::vector<bool> areLoaded;
+	std::vector<std::string> urls;
+
+	//set target version first
 	if (customManifestUrl.empty()) {
 		//note: target manifest always comes from trusted source
-		targetManifestUrl = g_state->_config.ChooseManifestUrl(targetVersion, true);
-		targetVersionCached = targetVersion + "$$" + "trusted";
+		versions.push_back(targetVersion + "$$" + "trusted");
+		urls.push_back(g_state->_config.ChooseManifestUrl(targetVersion, true));
 	}
 	else {
-		targetManifestUrl = customManifestUrl;
-		targetVersionCached = customManifestUrl;
+		versions.push_back(customManifestUrl);
+		urls.push_back(customManifestUrl);
 	}
-
-	std::vector<std::string> providedVersions = g_state->_config.GetProvidedVersions(targetVersion);
+	//append provided versions them
 	if (!customManifestUrl.empty())
-		providedVersions.insert(providedVersions.begin(), customManifestUrl);
-	std::vector<std::string> providedManifestUrls;
-	for (int i = 0; i < providedVersions.size(); i++)
-		providedManifestUrls.push_back(g_state->_config.ChooseManifestUrl(providedVersions[i]));
-
-	g_logger->infof("Target manifest at %s", targetManifestUrl.c_str());
-	g_logger->infof("Version %s needs files from %d versions", targetVersion.c_str(), int(providedVersions.size()));
-	for (int i = 0; i < providedVersions.size(); i++)
-		g_logger->debugf("  %s at %s", providedVersions[i].c_str(), providedManifestUrls[i].c_str());
+		versions.push_back(customManifestUrl);
+	for (std::string ver : g_state->_config.GetProvidedVersions(targetVersion))
+		versions.push_back(ver);
+	int n = versions.size();
+	urls.resize(n);
 
 	//see which manifests were not loaded in this updater session
-	std::vector<std::string> downloadedVersions;
-	std::vector<std::string> downloadedManifestUrls;
-	for (int i = -1; i < (int)providedVersions.size(); i++) {
-		std::string ver = (i < 0 ? targetVersionCached : providedVersions[i]);
-		std::string url = (i < 0 ? targetManifestUrl : providedManifestUrls[i]);
-		if (g_state->_loadedManifests.count(ver))
-			continue;
-		downloadedVersions.push_back(ver);
-		downloadedManifestUrls.push_back(url);
+	for (int i = 0; i < n; i++) {
+		bool isLoaded = g_state->_loadedManifests.count(versions[i]);
+		areLoaded.push_back(isLoaded);
 	}
+		
+	g_logger->infof("Target manifest at %s", urls[0].c_str());
+	g_logger->infof("Version %s needs files from %d versions", targetVersion.c_str(), int(versions.size() - 1));
+	for (int i = 1; i < versions.size(); i++)
+		g_logger->debugf("  %s %s", versions[i].c_str(), (areLoaded[i] ? "(loaded)" : ""));
 
-	g_logger->infof("Need to download %d manifests", (int)downloadedVersions.size());
-	for (int i = 0; i < downloadedVersions.size(); i++)
-		g_logger->infof("  %s at %s", downloadedVersions[i].c_str(), downloadedManifestUrls[i].c_str());
-
-
-	if (int n = downloadedVersions.size()) {
+	while (int downloadCnt = std::count(areLoaded.begin(), areLoaded.end(), false)) {
 		//inspect local cache of manifests
 		std::string cacheDir = TDM_INSTALLER_ZIPSYNC_DIR "/" TDM_INSTALLER_MANICACHE_SUBDIR;
 		stdext::create_directories(cacheDir);
 		//detect existing manifests and names for new ones
 		g_logger->infof("Looking into manifests cache");
 		std::vector<std::string> cachedManiNames, newManiNames;
-		for (int id = 0; id < 1000 || newManiNames.size() < n; id++) {
+		for (int id = 0; id < 1000 || newManiNames.size() < downloadCnt; id++) {
 			std::string filename = cacheDir + "/" + std::to_string(id) + ".iniz";
 			if (stdext::is_regular_file(filename))
 				cachedManiNames.push_back(filename);
-			else if (newManiNames.size() < n)
+			else if (newManiNames.size() < downloadCnt)
 				newManiNames.push_back(filename);
 		}
 		g_logger->infof("Detected %d manifests in cache", (int)cachedManiNames.size());
 
+		//get list of urls we need to download from
+		std::vector<std::string> downloadUrls;
+		g_logger->infof("Need to download manifests:");
+		for (int i = 0; i < n; i++) if (!areLoaded[i]) {
+			if (i > 0)
+				urls[i] = g_state->_config.ChooseManifestUrl(versions[i]);
+			downloadUrls.push_back(urls[i]);
+			g_logger->infof("  %s at %s", versions[i].c_str(), urls[i].c_str());
+		}
+
 		//fast pass: download hashes of all manifests
 		g_logger->infof("Downloading hashes of remote manifests");
-		std::vector<ZipSync::HashDigest> allHashes;
-		ZipSync::Downloader downloaderPreliminary;
-		if (progress)
-			downloaderPreliminary.SetProgressCallback(progress->GetDownloaderCallback());
-		allHashes = ZipSync::GetHashesOfRemoteChecksummedZips(downloaderPreliminary, downloadedManifestUrls);
+		Downloader downloaderPreliminary(progress);
+		downloaderPreliminary.SetErrorMode(true);	//skip url on download error!
+		std::vector<ZipSync::HashDigest> allHashes = ZipSync::GetHashesOfRemoteChecksummedZips(downloaderPreliminary, downloadUrls);
 		g_logger->infof("Downloaded bytes: %lld", downloaderPreliminary.TotalBytesDownloaded());
 
+		//filter only manifests which were downloaded successfully
+		//remove urls which failed to download from config
+		ZipSync::HashDigest zeroHash;
+		zeroHash.Clear();
+		int failCnt = std::count(allHashes.begin(), allHashes.end(), zeroHash);
+		if (failCnt > 0) {
+			g_logger->infof("Failed to download %d manifests", failCnt);
+			int k = 0;
+			for (int i = 0; i < allHashes.size(); i++) {
+				if (allHashes[i] == zeroHash) {
+					//failed to download hash, consider it to be "mirror is down" situation
+					//throw away failing url for future retries
+					g_state->_config.RemoveFailingUrl(downloadUrls[i]);
+				}
+				else {
+					allHashes[k] = allHashes[i];
+					downloadUrls[k] = downloadUrls[i];
+					k++;
+				}
+			}
+			allHashes.resize(k);
+			downloadUrls.resize(k);
+		}
+
 		g_logger->infof("Downloading actual remote manifests");
-		for (int i = 0; i < n; i++)
-			g_logger->infof("  (%s) %s -> %s", allHashes[i].Hex().c_str(), downloadedManifestUrls[i].c_str(), newManiNames[i].c_str());
+		for (int i = 0; i < allHashes.size(); i++) {
+			ZipSyncAssert(!(allHashes[i] == zeroHash));
+			g_logger->infof("  (%s) %s -> %s", allHashes[i].Hex().c_str(), downloadUrls[i].c_str(), newManiNames[i].c_str());
+		}
 
 		//second pass: download full manifests when necessary
-		ZipSync::Downloader downloaderFull;
-		if (progress)
-			downloaderFull.SetProgressCallback(progress->GetDownloaderCallback());
-		std::vector<int> matching = ZipSync::DownloadChecksummedZips(downloaderFull, downloadedManifestUrls, allHashes, cachedManiNames, newManiNames);
+		Downloader downloaderFull(progress);
+		newManiNames.resize(downloadUrls.size());
+		std::vector<int> matching = ZipSync::DownloadChecksummedZips(downloaderFull, downloadUrls, allHashes, cachedManiNames, newManiNames);
 		g_logger->infof("Downloaded bytes: %lld", downloaderFull.TotalBytesDownloaded());
 
-		g_logger->infof("Downloaded all manifests successfully");
-		for (int i = 0; i < n; i++)
-			g_logger->infof("  (%s) %s -> %s", allHashes[i].Hex().c_str(), downloadedManifestUrls[i].c_str(), newManiNames[i].c_str());
+		g_logger->infof("Downloaded manifests successfully");
+		for (int i = 0; i < allHashes.size(); i++)
+			g_logger->infof("  (%s) %s -> %s", allHashes[i].Hex().c_str(), downloadUrls[i].c_str(), newManiNames[i].c_str());
 
 		g_logger->infof("Loading downloaded manifests");
-		for (int i = 0; i < n; i++) {
+		for (int i = 0; i < allHashes.size(); i++) {
 			if (progress)
-				progress->Update(double(i) / n, ZipSync::formatMessage("Loading manifest \"%s\"...", newManiNames[i].c_str()));
+				progress->Update(double(i) / allHashes.size(), ZipSync::formatMessage("Loading manifest \"%s\"...", newManiNames[i].c_str()));
+			int pos = -1;
+			for (int j = 0; j < n; j++)
+				if (!areLoaded[j] && urls[j] == downloadUrls[i])
+					pos = j;
+			ZipSyncAssert(pos >= 0);
 			ZipSync::IniData ini = ZipSync::ReadIniFile(newManiNames[i].c_str());
 			ZipSync::Manifest mani;
 			mani.ReadFromIni(std::move(ini), root);
-			mani.ReRoot(ZipSync::GetDirPath(downloadedManifestUrls[i]));
-			g_state->_loadedManifests[downloadedVersions[i]] = std::move(mani);
+			mani.ReRoot(ZipSync::GetDirPath(urls[pos]));
+			g_state->_loadedManifests[versions[pos]] = std::move(mani);
+			areLoaded[pos] = true;
 			if (progress)
-				progress->Update(double(i+1) / n, ZipSync::formatMessage("Manifest \"%s\" loaded", newManiNames[i].c_str()));
+				progress->Update(double(i+1) / allHashes.size(), ZipSync::formatMessage("Manifest \"%s\" loaded", newManiNames[i].c_str()));
 		}
 		if (progress)
 			progress->Update(1.0, "Manifests loaded");
@@ -487,9 +524,10 @@ Actions::VersionInfo Actions::RefreshVersionInfo(const std::string &targetVersio
 		g_logger->debugf("  %s", ownedZips[i].c_str());
 
 	//gather full manifests for update
-	ZipSync::Manifest targetMani = g_state->_loadedManifests.at(targetVersionCached);
+	ZipSync::Manifest targetMani = g_state->_loadedManifests.at(versions[0]);
 	ZipSync::Manifest providMani = g_state->_localManifest;
-	for (const std::string &ver : providedVersions) {
+	for (int i = 1; i < versions.size(); i++) {
+		const std::string &ver = versions[i];
 		const ZipSync::Manifest &mani = g_state->_loadedManifests.at(ver);
 		ZipSync::Manifest added = mani.Filter([](const ZipSync::FileMetainfo &mf) -> bool {
 			return mf.location != ZipSync::FileLocation::Nowhere;
@@ -673,19 +711,43 @@ void Actions::PerformInstallFinalize(ZipSync::ProgressIndicator *progress) {
 	for (const std::string &fn : execFiles)
 		OsUtils::MarkAsExecutable(fn);
 	if (progress)
-		progress->Update(1.0, "Executables marked");
+		progress->Update(0.95, "Executables marked");
+
+	if (progress)
+		progress->Update(0.95, "Renaming config file...");
+	if (stdext::is_regular_file(TDM_DARKMOD_CFG_FILENAME)) {
+		time_t timeval = time(0);
+		//note: use UTC time to avoid any timezone troubles
+		auto *tm = gmtime(&timeval);
+		char filename[1024] = {0};
+		int len = strftime(filename, sizeof(filename), TDM_DARKMOD_CFG_OLD_FORMAT, tm);
+		ZipSyncAssertF(len > 0 && len < sizeof(filename)-1, "Failed to format TDM config filename with datetime (%d)", len);
+		g_logger->infof("Renaming %s to %s...", TDM_DARKMOD_CFG_FILENAME, filename);
+		if (stdext::is_regular_file(filename))
+			g_logger->infof("Failed to rename: destination file already exists.");
+		else
+			stdext::rename(TDM_DARKMOD_CFG_FILENAME, filename);
+		g_state->_oldConfigFilename = filename;
+	}
+	if (progress)
+		progress->Update(1.0, "Renamed config file");
 
 	progress->Update(1.0, "Finalization complete");
 	g_logger->infof("");
 }
 
-bool Actions::CanDeleteConfig() {
-	return stdext::is_regular_file(TDM_DARKMOD_CFG_FILENAME);
+bool Actions::CanRestoreOldConfig() {
+	return g_state->_oldConfigFilename.size() > 0;
 }
-void Actions::DoDeleteConfig() {
-	g_logger->infof("Removing %s...", TDM_DARKMOD_CFG_FILENAME);
-	if (stdext::is_regular_file(TDM_DARKMOD_CFG_FILENAME))
+void Actions::DoRestoreOldConfig() {
+	ZipSyncAssert(CanRestoreOldConfig());
+	g_logger->infof("Restoring %s...", g_state->_oldConfigFilename.c_str());
+	if (stdext::is_regular_file(TDM_DARKMOD_CFG_FILENAME)) {
 		stdext::remove(TDM_DARKMOD_CFG_FILENAME);
+		g_logger->infof("Removed %s", TDM_DARKMOD_CFG_FILENAME);
+	}
+	stdext::rename(g_state->_oldConfigFilename.c_str(), TDM_DARKMOD_CFG_FILENAME);
+	g_state->_oldConfigFilename.clear();
 	g_logger->infof("Finished.");
 	g_logger->infof("");
 }

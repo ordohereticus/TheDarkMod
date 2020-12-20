@@ -211,6 +211,8 @@ const idEventDef EV_LogString("logString", EventArgs('d', "logClass", "", 'd', "
 // Propagates the string to the sessioncommand variable in gameLocal
 const idEventDef EV_SessionCommand("sessionCommand", EventArgs('s', "cmd", ""), EV_RETURNS_VOID, "Sends the sessioncommand to the game");
 
+const idEventDef EV_SaveConDump("saveConDump", EventArgs('s', "cmd", "", 's', "cmd", ""), EV_RETURNS_VOID, "Saves condump into FM directory; first argument is appended to dump filename, everything before last occurence of second argument is removed");
+
 const idEventDef EV_HandleMissionEvent("handleMissionEvent", 
 	EventArgs('e', "objEnt", "the entity that triggered this event (e.g. a readable)", 
 			  'd', "eventType", "a numeric identifier (enumerated both in MissionData.h and tdm_defs.script) specifying the type of event", 
@@ -385,6 +387,7 @@ CLASS_DECLARATION( idClass, idThread )
 	
 	EVENT( EV_LogString,					idThread::Event_LogString )
 	EVENT( EV_SessionCommand,				idThread::Event_SessionCommand )
+	EVENT( EV_SaveConDump,					idThread::Event_SaveConDump )
 
 	EVENT( EV_HandleMissionEvent,			idThread::Event_HandleMissionEvent )
 
@@ -2301,6 +2304,76 @@ void idThread::Event_Translate( const char* input ) {
 void idThread::Event_SessionCommand(const char* cmd)
 {
 	gameLocal.sessionCommand = cmd;
+}
+
+void idThread::Event_SaveConDump(const char *filename, const char *startline)
+{
+	static int numberOfTimesSaved = 0;
+	if (++numberOfTimesSaved > 100) {
+		gameLocal.Warning("Event_SaveConDump called %d time: suppressed", numberOfTimesSaved);
+		return;
+	}
+
+	idStr fn = filename;
+	//avoid too lengthy filenames
+	fn.CapLength(20);
+	//replace all chars except for letters, digits, and underscores
+	for (int i = 0; i < fn.Length(); i++) {
+		char ch = fn[i];
+		if (ch >= 0 && (isalnum(ch) || ch == '_'))
+			continue;
+		if (ch == '.') {
+			//if extension is set, drop it
+			fn.CapLength(i);
+			break;
+		}
+		fn[i] = '_';
+	}
+	//avoid empty name
+	if (fn.Length() == 0)
+		fn = "default";
+	fn = "condump_" + fn + ".txt";
+
+	//execute console command (right now)
+	idStr command = idStr::Fmt("condump %s unwrap modsavepath\n", fn.c_str());
+	cmdSystem->BufferCommandText(CMD_EXEC_NOW, command.c_str());
+
+	if (strlen(startline) > 0) {
+		//search for special "start line" and remove everything before it
+		//this allows mapper to print exact text into the file
+		idFile *f = fileSystem->OpenFileRead(fn);
+		if (f) {
+			//prepare string to search for
+			idStr needle = startline;
+			#ifdef _WIN32
+			//let's hope EOL style is detected correctly on out platforms...
+			needle += '\r';
+			#endif
+			needle += '\n';
+			//read file
+			idList<char> text;
+			text.SetNum(f->Length() + 1);
+			f->Read(text.Ptr(), f->Length());
+			text[f->Length()] = 0;
+			fileSystem->CloseFile(f);
+			//search for last occurence of string
+			const char *last = nullptr;
+			int pos = 0;
+			while (1) {
+				int newpos = idStr::FindText(text.Ptr(), needle, true, pos);
+				if (newpos < 0)
+					break;
+				pos = newpos + needle.Length();
+				last = text.Ptr() + pos;
+			}
+			if (last) {
+				//resave without starting text
+				idFile *f = fileSystem->OpenFileWrite(fn);
+				f->Write(last, strlen(last));
+				fileSystem->CloseFile(f);
+			}
+		}
+	}
 }
 
 void idThread::Event_HandleMissionEvent(idEntity* entity, int eventType, const char* argument)

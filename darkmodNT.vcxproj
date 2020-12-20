@@ -357,9 +357,11 @@
     <ClInclude Include="framework\EventLoop.h" />
     <ClInclude Include="framework\File.h" />
     <ClInclude Include="framework\FileSystem.h" />
+    <ClInclude Include="framework\GamepadInput.h" />
     <ClInclude Include="framework\I18N.h" />
     <ClInclude Include="framework\KeyInput.h" />
     <ClInclude Include="framework\Licensee.h" />
+    <ClInclude Include="framework\LoadStack.h" />
     <ClInclude Include="framework\minizip\minizip_extra.h" />
     <ClInclude Include="framework\Session.h" />
     <ClInclude Include="framework\Session_local.h" />
@@ -651,6 +653,7 @@
     <ClInclude Include="idlib\geometry\Winding2D.h" />
     <ClInclude Include="idlib\hashing\MD4.h" />
     <ClInclude Include="idlib\hashing\MD5.h" />
+    <ClInclude Include="idlib\hashing\sha256.h" />
     <ClInclude Include="idlib\Heap.h" />
     <ClInclude Include="idlib\Heap_Embedded.h" />
     <ClInclude Include="idlib\Image.h" />
@@ -704,7 +707,9 @@
     <ClInclude Include="renderer\backend\DrawBatchExecutor.h" />
     <ClInclude Include="renderer\backend\GpuBuffer.h" />
     <ClInclude Include="renderer\backend\InteractionStage.h" />
+    <ClInclude Include="renderer\backend\ManyLightInteractionStage.h" />
     <ClInclude Include="renderer\backend\RenderBackend.h" />
+    <ClInclude Include="renderer\backend\ShadowMapStage.h" />
     <ClInclude Include="renderer\backend\StencilShadowStage.h" />
     <ClInclude Include="renderer\BloomStage.h" />
     <ClInclude Include="renderer\BufferObject.h" />
@@ -733,6 +738,9 @@
     <ClInclude Include="renderer\ModelDecal.h" />
     <ClInclude Include="renderer\ModelManager.h" />
     <ClInclude Include="renderer\ModelOverlay.h" />
+    <ClInclude Include="renderer\ParticleSystem.h" />
+    <ClInclude Include="renderer\ParticleSystem_decl.h" />
+    <ClInclude Include="renderer\ParticleSystem_def.h" />
     <ClInclude Include="renderer\Profiling.h" />
     <ClInclude Include="renderer\qgl.h" />
     <ClInclude Include="renderer\qgl_linked.h" />
@@ -747,6 +755,7 @@
     <ClInclude Include="sound\snd_local.h" />
     <ClInclude Include="sound\sound.h" />
     <ClInclude Include="sys\sys_local.h" />
+    <ClInclude Include="sys\sys_padinput.h" />
     <ClInclude Include="sys\sys_public.h" />
     <ClInclude Include="sys\win32\wglext.h" />
     <ClInclude Include="sys\win32\win_local.h" />
@@ -815,8 +824,10 @@
     <ClCompile Include="framework\EventLoop.cpp" />
     <ClCompile Include="framework\File.cpp" />
     <ClCompile Include="framework\FileSystem.cpp" />
+    <ClCompile Include="framework\GamepadInput.cpp" />
     <ClCompile Include="framework\I18N.cpp" />
     <ClCompile Include="framework\KeyInput.cpp" />
+    <ClCompile Include="framework\LoadStack.cpp" />
     <ClCompile Include="framework\minizip\minizip_extra.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|Win32'">NotUsing</PrecompiledHeader>
@@ -1104,6 +1115,16 @@
     <ClCompile Include="idlib\geometry\Winding2D.cpp" />
     <ClCompile Include="idlib\hashing\MD4.cpp" />
     <ClCompile Include="idlib\hashing\MD5.cpp" />
+    <ClCompile Include="idlib\hashing\sha256.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug with inlines and memory log|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug with inlines and memory log|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="idlib\Heap.cpp" />
     <ClCompile Include="idlib\Heap_Embedded.cpp" />
     <ClCompile Include="idlib\Image.cpp" />
@@ -1157,14 +1178,15 @@
     <ClCompile Include="renderer\backend\DrawBatchExecutor.cpp" />
     <ClCompile Include="renderer\backend\GpuBuffer.cpp" />
     <ClCompile Include="renderer\backend\InteractionStage.cpp" />
+    <ClCompile Include="renderer\backend\ManyLightInteractionStage.cpp" />
     <ClCompile Include="renderer\backend\RenderBackend.cpp" />
+    <ClCompile Include="renderer\backend\ShadowMapStage.cpp" />
     <ClCompile Include="renderer\backend\StencilShadowStage.cpp" />
     <ClCompile Include="renderer\BloomStage.cpp" />
     <ClCompile Include="renderer\BufferObject.cpp" />
     <ClCompile Include="renderer\Cinematic.cpp" />
     <ClCompile Include="renderer\CinematicFFMpeg.cpp" />
     <ClCompile Include="renderer\CinematicID.cpp" />
-    <ClCompile Include="renderer\draw_arb2.cpp" />
     <ClCompile Include="renderer\draw_common.cpp" />
     <ClCompile Include="renderer\draw_glsl.cpp" />
     <ClCompile Include="renderer\draw_glsl_multi.cpp" />
@@ -1216,6 +1238,7 @@
     <ClCompile Include="renderer\ModelDecal.cpp" />
     <ClCompile Include="renderer\ModelManager.cpp" />
     <ClCompile Include="renderer\ModelOverlay.cpp" />
+    <ClCompile Include="renderer\ParticleSystem.cpp" />
     <ClCompile Include="renderer\Profiling.cpp" />
     <ClCompile Include="renderer\qgl.cpp" />
     <ClCompile Include="renderer\RenderEntity.cpp" />
@@ -1253,6 +1276,7 @@
     <ClCompile Include="sound\snd_wavefile.cpp" />
     <ClCompile Include="sound\snd_world.cpp" />
     <ClCompile Include="sys\sys_local.cpp" />
+    <ClCompile Include="sys\sys_padinput.cpp" />
     <ClCompile Include="sys\win32\win_cpu.cpp" />
     <ClCompile Include="sys\win32\win_glimp.cpp" />
     <ClCompile Include="sys\win32\win_input.cpp" />

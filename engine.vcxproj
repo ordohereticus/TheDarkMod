@@ -463,6 +463,8 @@
     <ClInclude Include="idlib\precompiled.h" />
     <ClInclude Include="renderer\AmbientOcclusionStage.h" />
     <ClInclude Include="renderer\backend\GpuBuffer.h" />
+    <ClInclude Include="renderer\backend\ManyLightInteractionStage.h" />
+    <ClInclude Include="renderer\backend\ShadowMapStage.h" />
     <ClInclude Include="renderer\BloomStage.h" />
     <ClInclude Include="renderer\backend\DrawBatchExecutor.h" />
     <ClInclude Include="renderer\backend\StencilShadowStage.h" />
@@ -496,6 +498,9 @@
     <ClInclude Include="renderer\ModelDecal.h" />
     <ClInclude Include="renderer\ModelManager.h" />
     <ClInclude Include="renderer\ModelOverlay.h" />
+    <ClInclude Include="renderer\ParticleSystem.h" />
+    <ClInclude Include="renderer\ParticleSystem_decl.h" />
+    <ClInclude Include="renderer\ParticleSystem_def.h" />
     <ClInclude Include="renderer\Profiling.h" />
     <ClInclude Include="renderer\qgl.h" />
     <ClInclude Include="renderer\RenderSystem.h" />
@@ -1015,6 +1020,8 @@
     </ClCompile>
     <ClCompile Include="renderer\AmbientOcclusionStage.cpp" />
     <ClCompile Include="renderer\backend\GpuBuffer.cpp" />
+    <ClCompile Include="renderer\backend\ManyLightInteractionStage.cpp" />
+    <ClCompile Include="renderer\backend\ShadowMapStage.cpp" />
     <ClCompile Include="renderer\BloomStage.cpp" />
     <ClCompile Include="renderer\backend\DrawBatchExecutor.cpp" />
     <ClCompile Include="renderer\backend\StencilShadowStage.cpp" />
@@ -1025,7 +1032,6 @@
     <ClCompile Include="renderer\Cinematic.cpp" />
     <ClCompile Include="renderer\CinematicFFMpeg.cpp" />
     <ClCompile Include="renderer\CinematicID.cpp" />
-    <ClCompile Include="renderer\draw_arb2.cpp" />
     <ClCompile Include="renderer\draw_common.cpp" />
     <ClCompile Include="renderer\draw_glsl.cpp" />
     <ClCompile Include="renderer\draw_glsl_multi.cpp" />
@@ -1073,6 +1079,7 @@
     <ClCompile Include="renderer\ModelDecal.cpp" />
     <ClCompile Include="renderer\ModelManager.cpp" />
     <ClCompile Include="renderer\ModelOverlay.cpp" />
+    <ClCompile Include="renderer\ParticleSystem.cpp" />
     <ClCompile Include="renderer\Profiling.cpp" />
     <ClCompile Include="renderer\qgl.cpp" />
     <ClCompile Include="renderer\RenderEntity.cpp" />

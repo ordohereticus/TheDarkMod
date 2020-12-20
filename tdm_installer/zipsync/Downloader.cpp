@@ -40,6 +40,15 @@ void Downloader::EnqueueDownload(const DownloadSource &source, const DownloadFin
 void Downloader::SetProgressCallback(const GlobalProgressCallback &progressCallback) {
     _progressCallback = progressCallback;
 }
+void Downloader::SetErrorMode(bool silent) {
+    _silentErrors = silent;
+}
+void Downloader::SetUserAgent(const char *useragent) {
+    if (useragent)
+        _useragent.reset(new std::string(useragent));
+    else
+        _useragent.reset();
+}
 
 void Downloader::DownloadAll() {
     if (_progressCallback)
@@ -59,7 +68,15 @@ void Downloader::DownloadAll() {
 
     for (const auto &pKV : _urlStates) {
         std::string url = pKV.first;
-        DownloadAllForUrl(url);
+        try {
+            DownloadAllForUrl(url);
+        }
+        catch(const ErrorException &e) {
+            if (!_silentErrors)
+                throw e;    //rethrow further to caller
+            else
+                {}          //supress exception, continue with other urls
+        }
     }
 
     ZipSyncAssert(_curlHandle.get_deleter() == curl_easy_cleanup);
@@ -163,6 +180,8 @@ void Downloader::DownloadOneRequest(const std::string &url, const std::vector<in
     _currResponse->url = url;
     _currResponse->progressWeight = double(thisEstimate) / totalEstimate;
     CURL *curl = _curlHandle.get();
+    if (_useragent)
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, _useragent->c_str());
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_RANGE, byterangeStr.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, (curl_write_callback)write_callback);

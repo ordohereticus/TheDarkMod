@@ -397,9 +397,6 @@ extern idCVar cv_door_auto_open_on_unlock;
 
 extern idCVar cv_dm_distance;
 
-// Ambient light method CVar
-extern idCVar cv_ambient_method;
-
 // Volume of music speakers
 extern idCVar cv_music_volume;
 
@@ -649,6 +646,7 @@ extern idCVar	net_clientPredictGUI;
 extern idCVar	g_voteFlags;
 extern idCVar	g_mapCycle;
 extern idCVar	g_balanceTDM;
+extern idCVar	g_entityBindNew;
 
 extern idCVar	si_timeLimit;
 extern idCVar	si_fragLimit;

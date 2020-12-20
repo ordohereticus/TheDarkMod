@@ -193,7 +193,6 @@ static void GLW_GetWGLExtensionsWithFakeWindow( void ) {
 		win32.hDC = hDC;
 		GLimp_LoadFunctions();
 		win32.hDC = NULL;
-		qglGetIntegerv( GL_MAX_SAMPLES, ( GLint * )&glConfig.maxSamples );
 		qwglDeleteContext( gRC );
 		ReleaseDC( hWnd, hDC );
 
@@ -451,6 +450,13 @@ static bool GLW_CreateWindow( glimpParms_t parms ) {
 
 	// compute width and height
 	if ( parms.fullScreen ) {
+		//always adjust game resolution to desktop resolution in fullscreen mode
+		//TODO: move it to R_InitOpenGL?
+		parms.width = glConfig.vidWidth = win32.desktopWidth;
+		parms.height = glConfig.vidHeight = win32.desktopHeight;
+		r_customWidth.SetInteger( win32.desktopWidth );
+		r_customHeight.SetInteger( win32.desktopHeight );
+
 		if ( r_fullscreen.GetInteger() == 1 || r_fullscreen.GetInteger() == 2 )
 		{
 			exstyle = 0;
@@ -468,15 +474,8 @@ static bool GLW_CreateWindow( glimpParms_t parms ) {
 				parms.height += 2;
 			}
 		}
-		if ( parms.height != win32.desktopHeight ) {
-			glConfig.vidWidth = w = win32.desktopWidth;
-			glConfig.vidHeight = h = win32.desktopHeight;
-			r_customWidth.SetInteger( w );
-			r_customHeight.SetInteger( h );
-		} else {
-			w = parms.width;
-			h = parms.height;
-		}
+		w = parms.width;
+		h = parms.height;
 	} else {
 		RECT	r;
 
@@ -717,12 +716,6 @@ bool GLimp_Init( glimpParms_t parms ) {
 	// getting the wgl extensions involves creating a fake window to get a context,
 	// which is pretty disgusting, and seems to mess with the AGP VAR allocation
 	GLW_GetWGLExtensionsWithFakeWindow();
-
-	if ( parms.multiSamples > glConfig.maxSamples ) {
-		common->Warning( "GLimp_Init: Tried to set multiSamples above the maximum supported by hardware" );
-		parms.multiSamples = glConfig.maxSamples;
-		r_multiSamples.SetInteger( glConfig.maxSamples );
-	}
 
 	// try to change to fullscreen
 	if ( parms.fullScreen ) {

@@ -163,6 +163,10 @@ private:
 	// Emits the string to the session command variable in gameLocal.
 	void						Event_SessionCommand(const char* cmd);
 
+	// stgatilov #5369: Save condump to FM-local file (triggered by script).
+	// if "startline" is not empty, and it is present in console output, then everything before the last its occurence is removed from the file
+	void						Event_SaveConDump(const char *filename, const char *startline);
+
 	/**
 	* Tels: #3193 - translate a string template into the current language.
 	*/

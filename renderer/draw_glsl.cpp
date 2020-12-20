@@ -56,7 +56,7 @@ struct ShadowMapUniforms : GLSLUniformGroup {
 
 GLSLProgram *currrentInteractionShader; // dynamic, either pointInteractionShader or ambientInteractionShader
 
-idCVarBool r_shadowMapSinglePass( "r_shadowMapSinglePass", "0", CVAR_ARCHIVE | CVAR_RENDERER, "render shadow maps for all lights in a single pass" );
+idCVarInt r_shadowMapSinglePass( "r_shadowMapSinglePass", "0", CVAR_ARCHIVE | CVAR_RENDERER, "1 - render shadow maps for all lights in a single pass; 2 - also render all light interactions in a single pass" );
 
 static void ChooseInteractionProgram() {
 	if ( backEnd.vLight->lightShader->IsAmbientLight() ) {
@@ -273,8 +273,6 @@ RB_GLSL_CreateDrawInteractions
 =============
 */
 void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = false ) {
-	if ( r_shadowMapSinglePass.GetBool() /*|| r_skipInteractions.GetBool()*/ ) // duzenko: let shadow maps render for benchmarking
-		return;
 	if ( backEnd.vLight->shadowMapIndex > 42 )
 		return;
 	GL_PROFILE( "GLSL_DrawInteractions_ShadowMap" );
@@ -364,7 +362,7 @@ void RB_GLSL_DrawLight_ShadowMap() {
 
 	GL_CheckErrors();
 
-	if ( backEnd.vLight->lightShader->LightCastsShadows() ) {
+	if ( backEnd.vLight->lightShader->LightCastsShadows() && !r_shadowMapSinglePass ) {
 		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->globalInteractions, true );
 		RB_GLSL_CreateDrawInteractions( backEnd.vLight->localInteractions );
 		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->localInteractions );
@@ -443,7 +441,6 @@ void RB_GLSL_DrawInteractions() {
 ==================
 R_ReloadGLSLPrograms
 
-If the 'required' shaders fail to compile the r_useGLSL will toggle to 0 so as to fall back to ARB2 shaders
 filenames hardcoded here since they're not used elsewhere
 FIXME split the stencil and shadowmap interactions in separate shaders as the latter might not compile on DX10 and older hardware
 ==================
@@ -468,8 +465,7 @@ void R_ReloadGLSLPrograms_f( const idCmdArgs &args ) {
 
 	const char *programName = args.Argc() > 1 ? args.Argv( 1 ) : nullptr;
 	if ( !R_ReloadGLSLPrograms( programName ) ) {
-		r_useGLSL = false;
-		common->Printf( "GLSL shaders failed to init.\n" );
+		common->Error( "GLSL shaders failed to init.\n" );
 		return;
 	}
 	common->Printf( "---------------------------------\n" );

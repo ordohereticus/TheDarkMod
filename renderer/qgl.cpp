@@ -9,7 +9,27 @@
 #endif
 
 
+static idCVar r_glBlacklistExtensions("r_glBlacklistExtensions", "", CVAR_ARCHIVE | CVAR_RENDERER, "Set space-separated list of OpenGL extension to force-disable on game start");
+static void GLimp_LoadExtensionsBlacklist() {
+	static idStr text;
+	static idList<const char*> ptrs;
+	//parse extensions blacklist
+	text = r_glBlacklistExtensions.GetString();
+	ptrs.Clear();
+	for (int i = 0; i < text.Length(); i++)
+		if (text[i] == ' ')
+			text[i] = 0;
+	for (int i = 0; i < text.Length(); i++) if (text[i]) {
+		ptrs.Append(&text[i]);
+		i += idStr::Length(&text[i]);
+	}
+	ptrs.Append(nullptr);
+	//set pointer to our arrays
+	GLAD_GL_blacklisted_extensions = ptrs.Ptr();
+}
+
 void GLimp_LoadFunctions(bool inContext) {
+	GLimp_LoadExtensionsBlacklist();
 	bool GLok = gladLoadGL();
 	if (inContext && !GLok) {
 		common->Error("Failed to initialize OpenGL functions (glad)");
@@ -61,22 +81,6 @@ void GLimp_CheckRequiredFeatures( void ) {
 
 	common->Printf( "Checking optional OpenGL extensions...\n" );
 
-	qglGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS, &glConfig.maxTextureUnits );
-	common->Printf( "Max texture units: %d\n", glConfig.maxTextureUnits );
-	qglGetIntegerv( GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &glConfig.maxTextures );
-	common->Printf( "Max active textures: %d\n", glConfig.maxTextures );
-	if ( glConfig.maxTextures < MAX_MULTITEXTURE_UNITS ) {
-		common->Error( "   Too few!\n" );
-	}
-
-	int n;
-	qglGetIntegerv( GL_MAX_GEOMETRY_OUTPUT_VERTICES_ARB, &n );
-	common->Printf( "Max geometry output vertices: %d\n", n );
-	qglGetIntegerv( GL_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS_ARB, &n );
-	common->Printf( "Max geometry output components: %d\n", n );
-	qglGetIntegerv( GL_MAX_VERTEX_ATTRIBS, &n );
-	common->Printf( "Max vertex attribs: %d\n", n );
-
 	glConfig.anisotropicAvailable = CHECK_FEATURE(GL_EXT_texture_filter_anisotropic);
 	if ( glConfig.anisotropicAvailable ) {
 		qglGetFloatv( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &glConfig.maxTextureAnisotropy );
@@ -85,13 +89,38 @@ void GLimp_CheckRequiredFeatures( void ) {
 		glConfig.maxTextureAnisotropy = 1;
 	}
 
-	glConfig.arbAssemblyShadersAvailable = CHECK_FEATURE(GL_ARB_vertex_program) && CHECK_FEATURE(GL_ARB_fragment_program);
 	glConfig.stencilTexturing = CHECK_FEATURE( GL_ARB_stencil_texturing );
 	glConfig.depthBoundsTestAvailable = CHECK_FEATURE(GL_EXT_depth_bounds_test);
 	glConfig.bufferStorageAvailable = CHECK_FEATURE( GL_ARB_buffer_storage );
+
+	//it seems that these extensions are checked via GLAD_GL_xxx variables
+	CHECK_FEATURE(GL_ARB_multi_draw_indirect);
+	CHECK_FEATURE(GL_ARB_vertex_attrib_binding);
+	CHECK_FEATURE(GL_ARB_bindless_texture);
+	CHECK_FEATURE(GL_ARB_compatibility);
+	CHECK_FEATURE(GL_KHR_debug);
+
 #ifdef _WIN32
 	CHECK_FEATURE(WGL_EXT_swap_control);
 #endif
+
+	qglGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS, &glConfig.maxTextureUnits );
+	common->Printf( "Max active texture units in fragment shader: %d\n", glConfig.maxTextureUnits );
+	qglGetIntegerv( GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &glConfig.maxTextures );
+	common->Printf( "Max combined texture units: %d\n", glConfig.maxTextures );
+	if ( glConfig.maxTextures < MAX_MULTITEXTURE_UNITS ) {
+		common->Error( "   Too few!\n" );
+	}
+	qglGetIntegerv( GL_MAX_SAMPLES, &glConfig.maxSamples );
+	common->Printf( "Max anti-aliasing samples: %d\n", glConfig.maxSamples );
+
+	int n;
+	qglGetIntegerv( GL_MAX_GEOMETRY_OUTPUT_VERTICES_ARB, &n );
+	common->Printf( "Max geometry output vertices: %d\n", n );
+	qglGetIntegerv( GL_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS_ARB, &n );
+	common->Printf( "Max geometry output components: %d\n", n );
+	qglGetIntegerv( GL_MAX_VERTEX_ATTRIBS, &n );
+	common->Printf( "Max vertex attribs: %d\n", n );
 }
 
 

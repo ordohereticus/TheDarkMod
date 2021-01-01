@@ -1280,8 +1280,8 @@ void idSoundWorldLocal::ForegroundUpdate( int current44kHzTime ) {
 //		def->Spatialize( listenerPos, listenerArea, rw ); // grayman #4882
 
 		// per-sound debug options
-		if ( idSoundSystemLocal::s_drawSounds.GetInteger() && rw ) {
-			if ( def->distance < def->maxDistance || idSoundSystemLocal::s_drawSounds.GetInteger() > 1 ) {
+		if ( s_drawSounds.GetInteger() && rw ) {
+			if ( def->distance < def->maxDistance || s_drawSounds.GetInteger() > 1 ) {
 				idBounds ref;
 				ref.Clear();
 				ref.AddPoint( idVec3( -10, -10, -10 ) );
@@ -1299,7 +1299,7 @@ void idSoundWorldLocal::ForegroundUpdate( int current44kHzTime ) {
 				// draw the index
 				idVec3	textPos = def->origin;
 				textPos[2] -= 8;
-				rw->DrawText( va("%i", def->index), textPos, 0.1f, idVec4(1,0,0,1), listenerAxis );
+				rw->DrawText( va("%i (%.1f)", def->index, def->volumeLoss), textPos, 0.1f, idVec4(1,0,0,1), listenerAxis );
 				textPos[2] += 8;
 
 				// run through all the channels
@@ -1315,8 +1315,8 @@ void idSoundWorldLocal::ForegroundUpdate( int current44kHzTime ) {
 					float	min = chan->parms.minDistance;
 					float	max = chan->parms.maxDistance;
 					const char	*defaulted = chan->leadinSample->defaultSound ? "(DEFAULTED)" : "";
-					sprintf( text, "%s (%i/%i %i/%i)%s", chan->soundShader->GetName(), (int)def->distance,
-						(int)def->realDistance, (int)min, (int)max, defaulted );
+					sprintf( text, "%s (%.1f/%.1f %.0f/%.0f)%s", chan->soundShader->GetName(), def->distance,
+						def->realDistance, min, max, defaulted );
 					rw->DrawText( text, textPos, 0.1f, idVec4(1,0,0,1), listenerAxis );
 					textPos[2] += 8;
 				}

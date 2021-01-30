@@ -26,6 +26,7 @@
 
 #include "GamepadInput.h"
 #include "../renderer/backend/RenderBackend.h"
+#include "LoadStack.h"
 
 #define MAX_WARNING_LIST	256
 
@@ -1351,6 +1352,8 @@ void idCommonLocal::WriteConfigToFile(
 
 	if (configexport == eConfigExport_all || configexport == eConfigExport_keybinds)
 		idKeyInput::WriteBindings( f );
+	if (configexport == eConfigExport_all || configexport == eConfigExport_padbinds)
+		idGamepadInput::WriteBindings( f );
 	if (configexport == eConfigExport_all || configexport == eConfigExport_cvars)
 		cvarSystem->WriteFlaggedVariables( CVAR_ARCHIVE, "seta", f );
 
@@ -1384,6 +1387,7 @@ void idCommonLocal::WriteConfiguration( void ) {
 	// STiFU #4797: Separate config files for cvars and keybinds
 	WriteConfigToFile( CONFIG_FILE,	  "fs_savepath", idCommon::eConfigExport_cvars    );
 	WriteConfigToFile( KEYBINDS_FILE, "fs_savepath", idCommon::eConfigExport_keybinds );
+	WriteConfigToFile( PADBINDS_FILE, "fs_savepath", idCommon::eConfigExport_padbinds );
 
 	// restore the developer cvar
 	com_developer.SetBool( developer );
@@ -2430,6 +2434,8 @@ void idCommonLocal::InitCommands( void ) {
 	cmdSystem->AddCommand( "showDictMemory", idDict::ShowMemoryUsage_f, CMD_FL_SYSTEM, "shows memory used by dictionaries" );
 	cmdSystem->AddCommand( "listDictKeys", idDict::ListKeys_f, CMD_FL_SYSTEM|CMD_FL_CHEAT, "lists all keys used by dictionaries" );
 	cmdSystem->AddCommand( "listDictValues", idDict::ListValues_f, CMD_FL_SYSTEM|CMD_FL_CHEAT, "lists all values used by dictionaries" );
+	cmdSystem->AddCommand( "showLoadStackMemory", LoadStack::ShowMemoryUsage_f, CMD_FL_SYSTEM, "shows memory used by load stack strings (see decl_stack)" );
+	cmdSystem->AddCommand( "listLoadStackStrings", LoadStack::ListStrings_f, CMD_FL_SYSTEM|CMD_FL_CHEAT, "lists all strings stored in load stacks (see decl_stack)" );
 	cmdSystem->AddCommand( "testSIMD", idSIMD::Test_f, CMD_FL_SYSTEM|CMD_FL_CHEAT, "test SIMD code" );
 
 	// localization

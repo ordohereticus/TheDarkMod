@@ -569,6 +569,12 @@ bool PickableLock::ProcessLockpickRelease(int type)
 	{
 		return false; // busy playing the wrong lockpick sound
 	}
+	if (m_LockpickState == LOCKED || m_LockpickState == UNLOCKED || m_LockpickState == LOCK_SUCCESS || m_LockpickState == PIN_SUCCESS)
+	{
+		//stgatilov #5312: avoid second failed click due to CBinaryFrobMover::Event_ClearPlayerImmobilization
+		//also avoid failed click on successful release
+		return false;
+	}
 	
 	// Cancel all previous events on release
 	CancelEvents(&EV_TDM_LockpickSoundFinished);

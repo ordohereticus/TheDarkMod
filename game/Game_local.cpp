@@ -389,7 +389,9 @@ void idGameLocal::Clear( void )
 	lastGUIEnt = NULL;
 	lastGUI = 0;
 
+	/*memset( clientEntityStates, 0, sizeof( clientEntityStates ) );
 	memset( clientPVS, 0, sizeof( clientPVS ) );
+	memset( clientSnapshots, 0, sizeof( clientSnapshots ) );*/
 
 	memset( lagometer, 0, sizeof( lagometer ) );
 
@@ -4871,7 +4873,7 @@ void idGameLocal::RunDebugInfo( void ) {
 		idVec3 end = eye + dir * CM_MAX_TRACE_DIST * 0.9f;
 		if (clip.Translation(results, eye, end, 0, idMat3(), contentsMask, player)) {
 			int idx = results.c.entityNum;
-			if (idx >= 0 && idx < MAX_GENTITIES) {
+			if (idx >= 0) {
 				idEntity *ent = entities[idx];
 				if (ent) {
 					auto mdl = ent->GetPhysics()->GetClipModel();
@@ -5131,7 +5133,7 @@ idGameLocal::RegisterEntity
 void idGameLocal::RegisterEntity( idEntity *ent ) {
 	int spawn_entnum;
 
-	if ( spawnCount >= ( 1 << ( 32 - GENTITYNUM_BITS ) ) ) {
+	if ( spawnCount >= ( 1 << 30 ) ) {
 		Error( "idGameLocal::RegisterEntity: spawn count overflow" );
 	}
 
@@ -5804,19 +5806,19 @@ idEntity *idGameLocal::FindTraceEntity( idVec3 start, idVec3 end, const idTypeIn
 idGameLocal::EntitiesWithinRadius
 ================
 */
-int idGameLocal::EntitiesWithinRadius( const idVec3 org, float radius, idEntity **entityList, int maxCount ) const {
+int idGameLocal::EntitiesWithinRadius( const idVec3 org, float radius, idClip_EntityList &entityList ) const {
 	idEntity *ent;
 	idBounds bo( org );
-	int entCount = 0;
+	entityList.SetNum( 0 );
 
 	bo.ExpandSelf( radius );
 	for( ent = spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
 		if ( ent->GetPhysics()->GetAbsBounds().IntersectsBounds( bo ) ) {
-			entityList[entCount++] = ent;
+			entityList.AddGrow(ent);
 		}
 	}
 
-	return entCount;
+	return entityList.Num();
 }
 
 /*
@@ -5833,7 +5835,6 @@ void idGameLocal::KillBox( idEntity *ent, bool catch_teleport ) {
 	int			num;
 	idEntity *	hit;
 	idClipModel *cm;
-	idClipModel *clipModels[ MAX_GENTITIES ];
 	idPhysics	*phys;
 
 	phys = ent->GetPhysics();
@@ -5841,7 +5842,8 @@ void idGameLocal::KillBox( idEntity *ent, bool catch_teleport ) {
 		return;
 	}
 
-	num = clip.ClipModelsTouchingBounds( phys->GetAbsBounds(), phys->GetClipMask(), clipModels, MAX_GENTITIES );
+	idClip_ClipModelList clipModels;
+	num = clip.ClipModelsTouchingBounds( phys->GetAbsBounds(), phys->GetClipMask(), clipModels );
 	for ( i = 0; i < num; i++ ) {
 		cm = clipModels[ i ];
 
@@ -5905,7 +5907,6 @@ idGameLocal::RadiusDamage
 void idGameLocal::RadiusDamage( const idVec3 &origin, idEntity *inflictor, idEntity *attacker, idEntity *ignoreDamage, idEntity *ignorePush, const char *damageDefName, float dmgPower ) {
 	float		dist, damageScale, attackerDamageScale, attackerPushScale;
 	idEntity *	ent;
-	idEntity *	entityList[ MAX_GENTITIES ];
 	int			numListedEntities;
 	idBounds	bounds;
 	idVec3 		v, damagePoint, dir;
@@ -5929,7 +5930,8 @@ void idGameLocal::RadiusDamage( const idVec3 &origin, idEntity *inflictor, idEnt
 
 	bounds = idBounds( origin ).Expand( radius );
 	// get all entities touching the bounds
-	numListedEntities = clip.EntitiesTouchingBounds( bounds, -1, entityList, MAX_GENTITIES );
+	idClip_EntityList entityList;
+	numListedEntities = clip.EntitiesTouchingBounds( bounds, -1, entityList );
 
 	if ( inflictor && inflictor->IsType( idAFAttachment::Type ) ) {
 		inflictor = static_cast<idAFAttachment*>(inflictor)->GetBody();
@@ -6007,7 +6009,6 @@ idGameLocal::RadiusPush
 void idGameLocal::RadiusPush( const idVec3 &origin, const float radius, const float push, const idEntity *inflictor, const idEntity *ignore, float inflictorScale, const bool quake ) {
 	int i, numListedClipModels;
 	idClipModel *clipModel;
-	idClipModel *clipModelList[ MAX_GENTITIES ];
 	idVec3 dir;
 	idBounds bounds;
 	modelTrace_t result;
@@ -6019,7 +6020,8 @@ void idGameLocal::RadiusPush( const idVec3 &origin, const float radius, const fl
 	bounds = idBounds( origin ).Expand( radius );
 
 	// get all clip models touching the bounds
-	numListedClipModels = clip.ClipModelsTouchingBounds( bounds, -1, clipModelList, MAX_GENTITIES );
+	idClip_ClipModelList clipModelList;
+	numListedClipModels = clip.ClipModelsTouchingBounds( bounds, -1, clipModelList );
 
 	// apply impact to all the clip models through their associated physics objects
 	for ( i = 0; i < numListedClipModels; i++ ) {
@@ -6072,13 +6074,13 @@ void idGameLocal::RadiusPush( const idVec3 &origin, const float radius, const fl
 void idGameLocal::RadiusDouse( const idVec3 &origin, const float radius, const bool checkSpawnarg )
 {
 	idEntity *ent;
-	idEntity *entityList[MAX_GENTITIES];
 	int		  numListedEntities;
 
 	idBounds bounds = idBounds(origin).Expand(radius);
 
 	// get all entities touching the bounds
-	numListedEntities = clip.EntitiesTouchingBounds( bounds, -1, entityList, MAX_GENTITIES );
+	idClip_EntityList entityList;
+	numListedEntities = clip.EntitiesTouchingBounds( bounds, -1, entityList );
 
 	// douse all flames that have a LOS from them to the origin
 	for ( int i = 0 ; i < numListedEntities ; i++ )
@@ -7177,8 +7179,9 @@ int idGameLocal::TraceGasPath( idVec3 from, idVec3 to, idEntity* ignore, idVec3&
 }
 
 
-int idGameLocal::DoResponseAction(const CStimPtr& stim, int numEntities, idEntity* originator, const idVec3& stimOrigin)
+int idGameLocal::DoResponseAction(const CStimPtr& stim, const idClip_EntityList &srEntities, idEntity* originator, const idVec3& stimOrigin)
 {
+	int numEntities = srEntities.Num();
 	int numResponses = 0;
 	for ( int i = 0 ; i < numEntities ; i++ )
 	{
@@ -7436,6 +7439,8 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 	int n;
 	idBounds bounds;
 
+	idClip_EntityList srEntities;
+
 	// Now check the rest of the stims.
 	for (int i = 0; i < m_StimEntity.Num(); i++)
 	{
@@ -7547,6 +7552,7 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 				{
 					n = stim->m_CollisionEnts.Num();
 
+					srEntities.SetNum(n);
 					for (int n2 = 0; n2 < n; n2++)
 					{
 						srEntities[n2] = stim->m_CollisionEnts[n2];
@@ -7559,7 +7565,7 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 				else 
 				{
 					// Radius based stims
-					n = clip.EntitiesTouchingBounds(bounds, CONTENTS_RESPONSE, srEntities, MAX_GENTITIES);
+					n = clip.EntitiesTouchingBounds(bounds, CONTENTS_RESPONSE, srEntities);
 					//DM_LOG(LC_STIM_RESPONSE, LT_INFO)LOGSTRING("Entities touching bounds: %d\r", n);
 				}
 				
@@ -7575,7 +7581,7 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 					}
 
 					// Do responses for entities within the radius of the stim
-					numResponses = DoResponseAction(stim, n, entity, origin);
+					numResponses = DoResponseAction(stim, srEntities, entity, origin);
 				}
 
 				// The stim has fired, let it do any post-firing activity it may have

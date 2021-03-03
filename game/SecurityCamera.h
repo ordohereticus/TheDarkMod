@@ -42,7 +42,6 @@ public:
 	virtual bool			Pain( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
 	virtual void			Present( void );
 
-
 private:
 
 	enum
@@ -158,10 +157,11 @@ private:
 	void					SetAlertMode( int status );
 	void					DrawFov( void );
 	const idVec3			GetAxis( void ) const;
-
 	void					ReverseSweep( void );
 	void					ContinueSweep( void );
 	void					TurnToTarget( void );
+	void					Dislodge( void );
+
 	void					Event_AddLight( void );
 	void					Event_SpotLight_Toggle( void );
 	void					Event_Sweep_Toggle( void );

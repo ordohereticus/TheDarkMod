@@ -36,6 +36,7 @@
 ***********************************************************************/
 
 // grayman #4615 - Refactored for 2.06
+// dragofer #5528 - Developed for 2.10
 
 const idEventDef EV_SecurityCam_AddLight( "<addLight>", EventArgs(), EV_RETURNS_VOID, "internal" );
 const idEventDef EV_Peek_AddDisplay("<addDisplay>", EventArgs(), EV_RETURNS_VOID, "internal"); // grayman #4882
@@ -280,13 +281,13 @@ void idSecurityCamera::Spawn( void )
 	followIncline			= spawnArgs.GetBool("follow_incline", "0");
 	followTolerance			= spawnArgs.GetFloat("follow_tolerance", "15");
 	followInclineTolerance	= spawnArgs.GetFloat("follow_incline_tolerance", "10");
-	followSpeedMult = 0;
 	state	= STATE_SWEEPING;
 	sweeping = false;
 	following = false;
 	sparksOn = false;
 	stationary = false;
 	dislodged = false;
+	followSpeedMult = 0;
 	nextAlertTime = 0;
 	sweepStartTime = sweepEndTime = 0;
 	inclineStartTime = inclineEndTime = 0;
@@ -408,13 +409,15 @@ void idSecurityCamera::Spawn( void )
 		return;
 	}
 
+	// setup the physics
 	GetPhysics()->SetContents( CONTENTS_SOLID );
+
 	// SR CONTENTS_RESPONSE FIX
 	if( m_StimResponseColl->HasResponse() )
-		physicsObj.SetContents( physicsObj.GetContents() | CONTENTS_RESPONSE );
+		GetPhysics()->SetContents( GetPhysics()->GetContents() | CONTENTS_RESPONSE );
 
-	GetPhysics()->SetClipMask( MASK_SOLID | CONTENTS_BODY | CONTENTS_CORPSE | CONTENTS_MOVEABLECLIP );
-	// setup the physics
+	GetPhysics()->SetClipMask(MASK_SOLID | CONTENTS_BODY | CONTENTS_CORPSE | CONTENTS_MOVEABLECLIP);
+
 	UpdateChangeableSpawnArgs( NULL );
 
 	// Schedule a post-spawn event to setup other spawnargs
@@ -1296,6 +1299,7 @@ void idSecurityCamera::ContinueSweep( void )
 
 	angle = GetPhysics()->GetAxis().ToAngles().yaw;
 
+	// camera was chasing the player; return to the closest position
 	if ( following )
 	{
 		following = false;
@@ -1316,11 +1320,26 @@ void idSecurityCamera::ContinueSweep( void )
 		}
 	}
 
-	else if ( !following )
+	// security camera was switched off or saw the player but didn't turn towards him
+	else
 	{
-		sweepAngle		= fabs( idMath::AngleNormalize180(angle - angleTarget) );
-		sweepStartTime	= gameLocal.time;
-		sweepEndTime	= gameLocal.time + SEC2MS( sweepAngle / sweepSpeed );
+		sweepAngle = idMath::AngleNormalize180(angle - angleTarget);
+
+		if ( sweepAngle == 0 ) {
+			sweepEndTime = gameLocal.time -1;
+		}
+		else
+		{
+			if ( sweepAngle > 0 && negativeSweep ) {
+				sweepAngle -= 360;
+			}
+			if ( sweepAngle < 0 && !negativeSweep )	{
+				sweepAngle += 360;
+			}
+			sweepAngle = fabs(sweepAngle);
+			sweepStartTime = gameLocal.time;
+			sweepEndTime = gameLocal.time + SEC2MS(sweepAngle / sweepSpeed);
+		}
 	}
 
 	emitPauseSoundTime = sweepEndTime - PAUSE_SOUND_TIMING;
@@ -1433,47 +1452,16 @@ void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int dama
 	// Become a moveable if enough damage was dealt
 	if ( !dislodged && spawnArgs.GetBool("dislodge", "0") )
 	{
+		// damage is sufficient to dislodge
 		if ( health <= -fabs(spawnArgs.GetFloat("dislodge_health", "-100")) )
 		{
-			float friction, mass, bouncyness;
-			spawnArgs.GetFloat("dislodge_friction", "0.6", friction);
-			spawnArgs.GetFloat("dislodge_mass", "20", mass);
-			spawnArgs.GetFloat("dislodge_bouncyness", "0.1", bouncyness);
-			bouncyness = idMath::ClampFloat(0.0f, 1.0f, bouncyness);
-
-			dislodged = true;
-			physicsObj.SetSelf(this);
-			physicsObj.SetClipModel(new idClipModel(trm), 0.02f);
-			physicsObj.SetOrigin(GetPhysics()->GetOrigin());
-			physicsObj.SetAxis(GetPhysics()->GetAxis());
-			physicsObj.SetMass(mass);
-			physicsObj.SetBouncyness(bouncyness);
-			physicsObj.SetFriction(friction, friction, friction);
-			physicsObj.SetGravity(gameLocal.GetGravity());
-			physicsObj.SetContents(CONTENTS_SOLID | CONTENTS_OPAQUE);
-			physicsObj.SetClipMask(MASK_SOLID | CONTENTS_BODY | CONTENTS_CORPSE | CONTENTS_MOVEABLECLIP);
-			SetPhysics(&physicsObj);
-			physicsObj.Activate();
-
-			//disable sparks when dislodging, if desired
-			if ( spawnArgs.GetBool("dislodge_sparks", "0" ) == false )
-			{
-				BecomeInactive(TH_UPDATEPARTICLES);
-
-				if (sparksOn && !sparksPeriodic)
-				{
-					idEntity *sparksEntity = sparks.GetEntity();
-
-					sparksEntity->Activate(NULL);
-					StopSound(SND_CHANNEL_ANY, false);
-					sparksOn = false;
-				}
-			}
+			Dislodge();
 		}
 
+		// damage is insufficient
 		else if ( spawnArgs.GetBool("dislodge_oneshot", "1") )
 		{
-			health = 0;	// reset health if the player has to get under dislodge_health with a single hit and wasn't damaging enough
+			health = 0;	// reset health if the player has to do at least 'dislodge_health' damage with a single hit
 		}
 	}
 
@@ -1523,17 +1511,22 @@ void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int dama
 			return;
 		}
 
-		if ( dislodged && !spawnArgs.GetBool("dislodge_sparks") )
-		{
-			return;
-		}
-
 		nextSparkTime = gameLocal.time + SEC2MS(spawnArgs.GetFloat("sparks_delay", "2"));
 		BecomeActive(TH_UPDATEPARTICLES); // keeps stationary camera thinking to display sparks
 	}
 
 }
 
+/*
+============
+idSecurityCamera::Dislodge
+
+Replaces the security camera with a moveable when sufficiently damaged. Called by idSecurityCamera::Killed
+============
+*/
+void idSecurityCamera::Dislodge(void) {
+	dislodged = true;
+}
 
 /*
 ============
@@ -1567,6 +1560,12 @@ Present is called to allow entities to generate refEntities, lights, etc for the
 
 void idSecurityCamera::Present( void ) 
 {
+	if ( m_bFrobable )
+	{
+		UpdateFrobState();
+		UpdateFrobDisplay();
+	}
+
 	// don't present to the renderer if the entity hasn't changed
 	if ( !( thinkFlags & TH_UPDATEVISUALS ) ) {
 		return;
@@ -1598,34 +1597,36 @@ idSecurityCamera::Activate - turn camera power on/off
 void idSecurityCamera::Activate(idEntity* activator)
 {
 	powerOn = !powerOn;
-	
-	// handle death sparks
-	if ( state == STATE_DEAD )
+
+	// handle trigger Responses and Signals
+	TriggerResponse(activator, ST_TRIGGER);
+
+	if ( RespondsTo(EV_Activate) || HasSignal(SIG_TRIGGER) )
 	{
-		if ( dislodged && spawnArgs.GetBool("dislodge_sparks") == false )
+		Signal(SIG_TRIGGER);
+		ProcessEvent(&EV_Activate, activator);
+		TriggerGuis();
+	}
+	
+	// handle post-destruction sparks
+	if ( state == STATE_DEAD && spawnArgs.GetBool("sparks", "1") && sparksPowerDependent )
+	{
+		if ( powerOn )
 		{
-			return;
+			nextSparkTime = gameLocal.time;
+			BecomeActive(TH_UPDATEPARTICLES);
 		}
-
-		if ( spawnArgs.GetBool("sparks", "1") && sparksPowerDependent )
+		else if ( !powerOn )
 		{
-			if ( powerOn )
-			{
-				nextSparkTime = gameLocal.time;
-				BecomeActive(TH_UPDATEPARTICLES);
-			}
-			else if ( !powerOn )
-			{
-				BecomeInactive(TH_UPDATEPARTICLES);
+			BecomeInactive(TH_UPDATEPARTICLES);
 
-				if ( sparksOn && !sparksPeriodic )
-				{
-					idEntity *sparksEntity = sparks.GetEntity();
+			if ( sparksOn && !sparksPeriodic )
+			{
+				idEntity *sparksEntity = sparks.GetEntity();
 
-					sparksEntity->Activate(NULL);	// for non-periodic particles
-					StopSound(SND_CHANNEL_ANY, false);
-					sparksOn = false;
-				}
+				sparksEntity->Activate(NULL);	// for non-periodic particles
+				StopSound(SND_CHANNEL_ANY, false);
+				sparksOn = false;
 			}
 		}
 		return;

@@ -39,27 +39,39 @@
 // dragofer #5528 - Developed for 2.10
 
 const idEventDef EV_SecurityCam_AddLight( "<addLight>", EventArgs(), EV_RETURNS_VOID, "internal" );
+const idEventDef EV_SecurityCam_AddSparks( "<addSparks>", EventArgs(), EV_RETURNS_VOID, "internal" );
 const idEventDef EV_Peek_AddDisplay("<addDisplay>", EventArgs(), EV_RETURNS_VOID, "internal"); // grayman #4882
 const idEventDef EV_SecurityCam_SpotLightToggle( "toggle_light", EventArgs(), EV_RETURNS_VOID, "Toggles the spotlight on/off." );
+const idEventDef EV_SecurityCam_SpotLightState( "state_light", EventArgs('d', "set", ""), EV_RETURNS_VOID, "Switches the spotlight on or off. Respects the security camera's power state." );
 const idEventDef EV_SecurityCam_SweepToggle( "toggle_sweep", EventArgs(), EV_RETURNS_VOID, "Toggles the camera sweep." );
-const idEventDef EV_SecurityCam_SeePlayerToggle("toggle_see_player", EventArgs(), EV_RETURNS_VOID, "Toggles whether the camera can see the player.");
+const idEventDef EV_SecurityCam_SweepState( "state_sweep", EventArgs('d', "set", ""), EV_RETURNS_VOID, "Enables or disables the camera's sweeping." );
+const idEventDef EV_SecurityCam_SeePlayerToggle( "toggle_see_player", EventArgs(), EV_RETURNS_VOID, "Toggles whether the camera can see the player." );
+const idEventDef EV_SecurityCam_SeePlayerState( "state_see_player", EventArgs('d', "set", ""), EV_RETURNS_VOID, "Set whether the camera can see the player." );
 const idEventDef EV_SecurityCam_GetSpotLight("getSpotLight", EventArgs(), 'e', "Returns the spotlight used by the camera. Returns null_entity if none is used.");
 const idEventDef EV_SecurityCam_GetSecurityCameraState("getSecurityCameraState", EventArgs(), 'f', "Returns the security camera's state. 1 = unalerted, 2 = suspicious, 3 = fully alerted, 4 = inactive, 5 = destroyed.");
 const idEventDef EV_SecurityCam_GetHealth("getHealth", EventArgs(), 'f', "Returns the health of the security camera.");
 const idEventDef EV_SecurityCam_SetHealth("setHealth", EventArgs('f', "health", ""), EV_RETURNS_VOID, "Set the health of the security camera. Setting to 0 or lower will destroy it.");
 const idEventDef EV_SecurityCam_SetSightThreshold("setSightThreshold", EventArgs('f', "sightThreshold", ""), EV_RETURNS_VOID, "Set the sight threshold of the security camera: how lit up the player's lightgem needs to be in order to be seen. 0.0 to 1.0");
+const idEventDef EV_SecurityCam_On( "On", EventArgs(), EV_RETURNS_VOID, "Switches the security camera on." );
+const idEventDef EV_SecurityCam_Off( "Off", EventArgs(), EV_RETURNS_VOID, "Switches the security camera off." );
 
 CLASS_DECLARATION( idEntity, idSecurityCamera )
 	EVENT( EV_PostSpawn,							idSecurityCamera::PostSpawn )
 	EVENT( EV_SecurityCam_AddLight,					idSecurityCamera::Event_AddLight )
+	EVENT( EV_SecurityCam_AddSparks,				idSecurityCamera::Event_AddSparks )
 	EVENT( EV_SecurityCam_SpotLightToggle,			idSecurityCamera::Event_SpotLight_Toggle )
+	EVENT( EV_SecurityCam_SpotLightState,			idSecurityCamera::Event_SpotLight_State )
 	EVENT( EV_SecurityCam_SweepToggle,				idSecurityCamera::Event_Sweep_Toggle )
+	EVENT( EV_SecurityCam_SweepState,				idSecurityCamera::Event_Sweep_State )
 	EVENT( EV_SecurityCam_SeePlayerToggle,			idSecurityCamera::Event_SeePlayer_Toggle )
+	EVENT( EV_SecurityCam_SeePlayerState,			idSecurityCamera::Event_SeePlayer_State )
 	EVENT( EV_SecurityCam_GetSpotLight,				idSecurityCamera::Event_GetSpotLight )	
 	EVENT( EV_SecurityCam_GetSecurityCameraState,	idSecurityCamera::Event_GetSecurityCameraState )	
 	EVENT( EV_SecurityCam_GetHealth,				idSecurityCamera::Event_GetHealth )
 	EVENT( EV_SecurityCam_SetHealth,				idSecurityCamera::Event_SetHealth )
 	EVENT( EV_SecurityCam_SetSightThreshold,		idSecurityCamera::Event_SetSightThreshold )
+	EVENT( EV_SecurityCam_On,						idSecurityCamera::Event_On )
+	EVENT( EV_SecurityCam_Off,						idSecurityCamera::Event_Off )
 	END_CLASS
 
 #define PAUSE_SOUND_TIMING 500 // start sound prior to finishing sweep
@@ -81,7 +93,6 @@ void idSecurityCamera::Save( idSaveGame *savefile ) const {
 	savefile->WriteFloat(followInclineTolerance);
 
 	savefile->WriteFloat(sweepAngle);
-	savefile->WriteFloat(sweepTime);
 	savefile->WriteFloat(sweepSpeed);
 	savefile->WriteFloat(sweepStartTime);
 	savefile->WriteFloat(sweepEndTime);
@@ -175,7 +186,6 @@ void idSecurityCamera::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat(followInclineTolerance);
 	   
 	savefile->ReadFloat(sweepAngle);
-	savefile->ReadFloat(sweepTime);
 	savefile->ReadFloat(sweepSpeed);
 	savefile->ReadFloat(sweepStartTime);
 	savefile->ReadFloat(sweepEndTime);
@@ -263,7 +273,7 @@ void idSecurityCamera::Spawn( void )
 
 	rotate			= spawnArgs.GetBool("rotate", "1");
 	sweepAngle		= spawnArgs.GetFloat("sweepAngle", "90");
-	sweepTime		= spawnArgs.GetFloat("sweepTime", "5");
+	sweepSpeed		= spawnArgs.GetFloat("sweepSpeed", "15");
 	health			= spawnArgs.GetInt("health", "100");
 	scanFov			= spawnArgs.GetFloat("scanFov", "90");
 	scanDist		= spawnArgs.GetFloat("scanDist", "200");
@@ -273,7 +283,6 @@ void idSecurityCamera::Spawn( void )
 	colorSighted	= spawnArgs.GetVector("color_sighted", "0.7 0.7 0.3");
 	colorAlerted	= spawnArgs.GetVector("color_alerted", "0.7 0.3 0.3");
 	sparksPowerDependent	= spawnArgs.GetBool("sparks_power_dependent", "1");
-	sparksPeriodic			= spawnArgs.GetBool("sparks_periodic", "1");
 	sparksInterval			= spawnArgs.GetFloat("sparks_interval", "3");
 	sparksIntervalRand		= spawnArgs.GetFloat("sparks_interval_rand", "2");
 	sightThreshold			= spawnArgs.GetFloat("sight_threshold", "0.1");
@@ -288,6 +297,7 @@ void idSecurityCamera::Spawn( void )
 	stationary = false;
 	m_bFlinderize = false;
 	flinderized = false;
+	sparksPeriodic = true;
 	followSpeedMult = 0;
 	nextAlertTime = 0;
 	sweepStartTime = sweepEndTime = 0;
@@ -303,6 +313,17 @@ void idSecurityCamera::Spawn( void )
 	spotLight	= NULL;
 	sparks = NULL;
 	cameraDisplay = NULL;
+
+	//check if this is an old version of the entity
+	if ( spawnArgs.GetBool("legacy", "0") ) {
+
+		//sweepSpeed acts as sweepTime
+		int sweepTime = spawnArgs.GetFloat("sweepSpeed", "5");
+		sweepSpeed = fabs(sweepAngle) / sweepTime;
+
+		//wait acts as alertDuration
+		alertDuration = spawnArgs.GetFloat("wait", "20");
+	}
 
 	modelAxis	= spawnArgs.GetInt( "modelAxis", "0" );
 	if ( modelAxis < 0 || modelAxis > 2 ) {
@@ -323,17 +344,6 @@ void idSecurityCamera::Spawn( void )
 		cameraFovY = scanFov;
 	}
 
-	//check if this is an old entity that still uses sweepSpeed as if it was sweepTime
-	if (spawnArgs.GetFloat("sweepSpeed", "0") > 0) {
-		sweepTime = spawnArgs.GetFloat("sweepSpeed", "5");
-	}
-
-	//if "alarm_duration" is not set, use "wait" instead
-	alertDuration = spawnArgs.GetFloat("alarm_duration", "0");
-	if (alertDuration == 0) {
-		alertDuration = spawnArgs.GetFloat("wait", "20");
-	}
-
 	scanFovCos = cos( scanFov * idMath::PI / 360.0f );
 
 	//yaw angle
@@ -346,7 +356,6 @@ void idSecurityCamera::Spawn( void )
 	anglePos2		= ( negativeSweep ) ? angleTarget : angle;
 
 	sweepAngle		= fabs(sweepAngle);
-	sweepSpeed		= sweepAngle / sweepTime;
 	percentSwept	= 0.0f;
 
 	//pitch angle
@@ -410,12 +419,32 @@ void idSecurityCamera::Spawn( void )
 		return;
 	}
 
+	// find out whether the mapper has selected a looping particle. This changes how the code will control it
+	const char *particle;
+	spawnArgs.GetString("sparks_particle", "sparks_wires_oneshot.prt", &particle);
+
+	const idDeclParticle *particleDecl;
+	particleDecl = static_cast<const idDeclParticle *>( declManager->FindType(DECL_PARTICLE, particle) );
+
+	if ( particleDecl )
+	{
+		for ( int stageNum = 0; stageNum < particleDecl->stages.Num(); stageNum++ )
+		{
+			idParticleStage *stage = particleDecl->stages[stageNum];
+			if (stage->cycles == 0)
+			{
+				sparksPeriodic = false;
+			}
+		}
+	}
+
 	// setup the physics
 	GetPhysics()->SetContents( CONTENTS_SOLID );
 
 	// SR CONTENTS_RESPONSE FIX
-	if( m_StimResponseColl->HasResponse() )
-		GetPhysics()->SetContents( GetPhysics()->GetContents() | CONTENTS_RESPONSE );
+	if( m_StimResponseColl->HasResponse() ) {
+		GetPhysics()->SetContents(GetPhysics()->GetContents() | CONTENTS_RESPONSE);
+	}
 
 	GetPhysics()->SetClipMask(MASK_SOLID | CONTENTS_BODY | CONTENTS_CORPSE | CONTENTS_MOVEABLECLIP);
 
@@ -597,38 +626,6 @@ void idSecurityCamera::UpdateColors()
 
 	if ( light ) {
 		light->Event_SetColor(colorNew[0], colorNew[1], colorNew[2]);
-	}
-}
-
-/*
-================
-idSecurityCamera::Event_SpotLight_Toggle
-================
-*/
-void idSecurityCamera::Event_SpotLight_Toggle(void)
-{
-	idLight* light = spotLight.GetEntity();
-	if ( light == NULL )
-	{
-		return; // no spotlight was defined; nothing to do
-	}
-
-	// toggle the spotlight
-
-	spotlightPowerOn = !spotlightPowerOn;
-
-	if ( powerOn )
-	{
-		if ( spotlightPowerOn )
-		{
-			light->On();
-			Event_SetSkin(spawnArgs.GetString("skin_on", "security_camera_on"));
-		}
-		else
-		{
-			light->Off();
-			Event_SetSkin(spawnArgs.GetString("skin_on_spotlight_off", "security_camera_on_spotlight_off"));
-		}
 	}
 }
 
@@ -956,6 +953,32 @@ void idSecurityCamera::SetAlertMode( int alert ) {
 
 /*
 ================
+idSecurityCamera::Event_AddSparks
+================
+*/
+void idSecurityCamera::Event_AddSparks(void)
+{
+		idEntity *sparkEntity;
+		idDict args;
+		const char *particle, *cycleTrigger;
+		spawnArgs.GetString("sparks_particle", "sparks_wires_oneshot.prt", &particle);
+		cycleTrigger = ( sparksPeriodic ) ? "1" : "0";
+
+		args.Set( "classname", "func_emitter" );
+		args.Set( "origin", GetPhysics()->GetOrigin().ToString() );
+		args.Set( "model", particle );
+		args.Set( "cycleTrigger", cycleTrigger );
+		gameLocal.SpawnEntityDef( args, &sparkEntity );
+		sparks = sparkEntity;
+		sparksOn = true;
+		if ( sparksPeriodic )
+		{
+			sparkEntity->Activate(NULL);
+		}
+}
+
+/*
+================
 idSecurityCamera::TriggerSparks
 ================
 */
@@ -967,6 +990,7 @@ void idSecurityCamera::TriggerSparks( void )
 		return;
 	}
 
+	//check whether a looping particle emitter needs to be toggled
 	if ( !sparksPeriodic )
 	{
 		BecomeInactive(TH_UPDATEPARTICLES);
@@ -977,7 +1001,6 @@ void idSecurityCamera::TriggerSparks( void )
 			{
 				return;
 			}
-
 			else
 			{
 				sparksOn = powerOn;
@@ -985,34 +1008,15 @@ void idSecurityCamera::TriggerSparks( void )
 		}
 	}
 
-	idEntity *sparkEntity = sparks.GetEntity();
-
 	//Create a func_emitter if none exists yet
-	if (sparkEntity == NULL)
+	if ( sparks.GetEntity() == NULL)
 	{
-		idDict args;
-		const char *model;
-		const char *cycleTrigger;
-
-		spawnArgs.GetString("sparks_particle", "sparks_wires_oneshot.prt", &model);
-		spawnArgs.GetString("sparks_periodic", "1", &cycleTrigger);
-
-		args.Set("classname", "func_emitter");
-		args.Set("origin", GetPhysics()->GetOrigin().ToString());
-		args.Set("model", model);
-		args.Set("cycleTrigger", cycleTrigger);
-		gameLocal.SpawnEntityDef(args, &sparkEntity);
-		sparks = sparkEntity;
-		sparksOn = true;
-		if ( sparksPeriodic )
-		{
-			sparkEntity->Activate(NULL);
-		}
+		Event_AddSparks();
 	}
-
+	//Otherwise use the existing one
 	else
 	{
-		sparkEntity->Activate(NULL);
+		sparks.GetEntity()->Activate(NULL);
 	}
 
 	StopSound(SND_CHANNEL_ANY, false);
@@ -1277,7 +1281,7 @@ idSecurityCamera::StartSweep
 void idSecurityCamera::StartSweep( void ) {
 	sweeping = true;
 	sweepStartTime = gameLocal.time;
-	sweepEndTime = sweepStartTime + SEC2MS(sweepTime);
+	sweepEndTime = sweepStartTime + SEC2MS(sweepAngle / sweepSpeed);
 	emitPauseSoundTime = sweepEndTime - PAUSE_SOUND_TIMING;
 	StartSound( "snd_moving", SND_CHANNEL_BODY, 0, false, NULL );
 	emitPauseSound = true;
@@ -1440,48 +1444,52 @@ void idSecurityCamera::Damage(idEntity *inflictor, idEntity *attacker, const idV
 	{
 		gameLocal.Error("Unknown damageDef '%s'\n", damageDefName);
 	}
-
+	
 
 	// check what is damaging the security camera and adjust damage according to spawnargs
+	idStr def = damageDefName;
+	idStr inf = inflictor->GetEntityDefName();
+	int damage = damageDef->GetInt( "damage" );
+	float damage_mult = 1.0f;
+	float exponential = spawnArgs.GetFloat("damage_splash_falloff", "2.0");
 
-	idStr def = static_cast<idStr>(damageDefName);
-	int damage = damageDef->GetInt("damage");
-	float dmg_mult;
+	// has the mapper specified a spawnarg for a specific damageDef or entityDef? Should take priority
+	if ( spawnArgs.GetString("damage_mult_" + def, "") != "" ) {
+		damage_mult = spawnArgs.GetFloat("damage_mult_" + def, "1.0");
+	}
+	else if ( spawnArgs.GetString("damage_mult_" + inf, "") != "" ) {
+		damage_mult = spawnArgs.GetFloat("damage_mult_" + inf, "1.0");
+	}
 
-	if ( def == "atdm:damage_firearrowDirect" ) {
-		dmg_mult = spawnArgs.GetFloat("damage_mult_firearrow_direct", "1.0");
-	}
-	else if ( def == "atdm:damage_firearrowSplash" ) {
-		dmg_mult = spawnArgs.GetFloat("damage_mult_firearrow_splash", "1.0") * damageScale;
-	}
-	else if ( def == "atdm:damage_arrow" ) {
-		dmg_mult = spawnArgs.GetFloat("damage_mult_broadhead", "0.0");
-	}
-	else if ( def == "atdm:damage_moveable" ) {
-		dmg_mult = spawnArgs.GetFloat("damage_mult_moveable", "0.0") * damageScale;
-		if ( inflictor->IsType(idMoveable::Type) )
+	// otherwise check the standard spawnargs
+	else {
+		if ( def == "atdm:damage_firearrowDirect" ) {
+			damage_mult = spawnArgs.GetFloat("damage_mult_firearrow_direct", "1.0");
+		}
+		else if ( def == "atdm:damage_firearrowSplash" ) {
+			damage_mult = spawnArgs.GetFloat("damage_mult_firearrow_splash", "3.5");
+		}
+		else if ( def == "atdm:damage_arrow" ) {
+			damage_mult = spawnArgs.GetFloat("damage_mult_arrow", "0.0");
+		}
+		else if ( inf == "atdm:attachment_melee_shortsword" ) {
+			damage_mult = spawnArgs.GetFloat("damage_mult_sword", "0.0");
+		}
+		else if ( inf == "atdm:attachment_meleetest_blackjack" ) {
+			damage_mult = 1.0f;
+			damage = spawnArgs.GetInt("damage_blackjack", "0");
+		}
+		else if ( inflictor->IsType(idMoveable::Type) )
 		{
 			float mass = inflictor->GetPhysics()->GetMass();
-			damage *= static_cast<int>(mass / 5.0f);
+			damage = (int)( damage * (mass / 5.0f) * spawnArgs.GetFloat("damage_mult_moveable", "1.0") );
 		}
-		gameLocal.Printf("I'm a moveable \n");
-	}
-	else if ( static_cast<idStr>(inflictor->GetEntityDefName()) == "atdm:attachment_melee_shortsword" ) {
-		dmg_mult = spawnArgs.GetFloat("damage_mult_sword", "0.0");
-	}
-	else if ( static_cast<idStr>(inflictor->GetEntityDefName()) == "atdm:attachment_meleetest_blackjack" ) {
-		dmg_mult = 1.0f;
-		damage = spawnArgs.GetInt("damage_blackjack", "0.0");
-	}
-	else
-	{
-		const char *key				= "damage_mult_" + def;
-		const char *default_mult	= spawnArgs.GetString("damage_mult_other", "1.0");
-
-		dmg_mult = spawnArgs.GetFloat(key, default_mult);
+		else {
+			damage_mult = spawnArgs.GetFloat("damage_mult_other", "1.0");
+		}
 	}
 
-	damage *= dmg_mult;
+	damage *= damage_mult * pow( fabs(damageScale), exponential );
 
 	// inform the attacker that they hit someone
 	attacker->DamageFeedback(this, inflictor, damage);
@@ -1612,11 +1620,12 @@ void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int dama
 		cameraDisplay.GetEntity()->Hide();
 	}
 
+	// Activate sparks
 	if ( spawnArgs.GetBool("sparks", "1") )
 	{
-		if ( !(sparksPowerDependent && !powerOn) )
+		if ( powerOn || !sparksPowerDependent )
 		{
-			nextSparkTime = gameLocal.time + SEC2MS(spawnArgs.GetFloat("sparks_delay", "2"));
+			nextSparkTime = gameLocal.time + SEC2MS( spawnArgs.GetFloat("sparks_delay", "2") );
 			BecomeActive(TH_UPDATEPARTICLES); // keeps stationary camera thinking to display sparks
 		}
 	}
@@ -1626,7 +1635,7 @@ void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int dama
 	idEntity *ent = gameLocal.FindEntity(str);
 	if ( ent )
 	{
-		ent->Activate(this);
+		ent->Activate( this );
 	}
 }
 
@@ -1710,7 +1719,7 @@ void idSecurityCamera::Activate(idEntity* activator)
 		TriggerGuis();
 	}
 	
-	// handle post-destruction sparks
+	// handle sparks (post-destruction)
 	if ( state == STATE_DEAD && spawnArgs.GetBool("sparks", "1") && sparksPowerDependent )
 	{
 		if ( powerOn )
@@ -1718,15 +1727,16 @@ void idSecurityCamera::Activate(idEntity* activator)
 			nextSparkTime = gameLocal.time;
 			BecomeActive(TH_UPDATEPARTICLES);
 		}
-		else if ( !powerOn )
+		else
 		{
 			BecomeInactive(TH_UPDATEPARTICLES);
 
+			// toggle off looping particles
 			if ( sparksOn && !sparksPeriodic )
 			{
 				idEntity *sparksEntity = sparks.GetEntity();
 
-				sparksEntity->Activate(NULL);	// for non-periodic particles
+				sparksEntity->Activate(NULL);
 				StopSound(SND_CHANNEL_ANY, false);
 				sparksOn = false;
 			}
@@ -1816,39 +1826,96 @@ void idSecurityCamera::Activate(idEntity* activator)
 
 /*
 ================
+idSecurityCamera::Event_SpotLight_Toggle
+================
+*/
+void idSecurityCamera::Event_SpotLight_Toggle( void )
+{
+	Event_SpotLight_State( !spotlightPowerOn );
+}
+
+/*
+================
+idSecurityCamera::Event_SpotLight_State
+================
+*/
+void idSecurityCamera::Event_SpotLight_State( bool set )
+{
+	idLight* light = spotLight.GetEntity();
+	if ( light == NULL )
+	{
+		return; // no spotlight was defined; nothing to do
+	}
+
+	spotlightPowerOn = set;
+
+	if ( powerOn )
+	{
+		if ( spotlightPowerOn )
+		{
+			light->On();
+			Event_SetSkin(spawnArgs.GetString("skin_on", "security_camera_on"));
+		}
+		else
+		{
+			light->Off();
+			Event_SetSkin(spawnArgs.GetString("skin_on_spotlight_off", "security_camera_on_spotlight_off"));
+		}
+	}
+}
+
+/*
+================
 idSecurityCamera::Event_Sweep_Toggle
 ================
 */
 void idSecurityCamera::Event_Sweep_Toggle( void )
 {
-	stationary = !stationary;
-	switch(state)
-	{
-	case STATE_SWEEPING:
-		if ( stationary )
-		{
-			sweeping = false;
-			StopSound(SND_CHANNEL_ANY, false);
-			StartSound("snd_end", SND_CHANNEL_BODY, 0, false, NULL);
-		}
-		else if ( !stationary )
-		{
-			ContinueSweep(); // changes state to STATE_SWEEPING
-		}
-		break;
-	case STATE_PLAYERSIGHTED:
-	case STATE_LOSTINTEREST:
-	case STATE_ALERTED:
-	case STATE_DEAD:
-		break;
-	case STATE_PAUSED:
-		if ( !stationary )
-		{
-			ReverseSweep(); // changes state to STATE_SWEEPING
-		}
-		break;
-	}
+	Event_Sweep_State( stationary );	//will invert 'stationary'
+}
 
+/*
+================
+idSecurityCamera::Event_Sweep_State
+================
+*/
+void idSecurityCamera::Event_Sweep_State( bool set )
+{
+	if ( stationary == !set )
+	{
+		return;	//do nothing if the security camera is already in the desired sweep status
+	}
+	else
+	{
+		stationary = !set;
+
+		switch( state )
+		{
+		case STATE_SWEEPING:
+			if ( stationary )
+			{
+				sweeping = false;
+				StopSound(SND_CHANNEL_ANY, false);
+				StartSound("snd_end", SND_CHANNEL_BODY, 0, false, NULL);
+			}
+			else if ( !stationary )
+			{
+				ContinueSweep(); // changes state to STATE_SWEEPING
+			}
+			break;
+		case STATE_PLAYERSIGHTED:
+		case STATE_LOSTINTEREST:
+		case STATE_ALERTED:
+		case STATE_DEAD:
+			break;
+		case STATE_PAUSED:
+			if ( !stationary )
+			{
+				ReverseSweep(); // changes state to STATE_SWEEPING
+			}
+			break;
+		}
+	}
 }
 
 /*
@@ -1856,9 +1923,44 @@ void idSecurityCamera::Event_Sweep_Toggle( void )
 idSecurityCamera::Event_SeePlayer_Toggle
 ================
 */
-void idSecurityCamera::Event_SeePlayer_Toggle(void)
+void idSecurityCamera::Event_SeePlayer_Toggle( void )
 {
 	//Use a spawnarg-based approach for backwards compatibility
-	idStr str = ( spawnArgs.GetBool("seePlayer", "0") ) ? "0" : "1";
-	spawnArgs.Set( "seePlayer", str );
+	const char *kv = ( spawnArgs.GetBool("seePlayer", "0") ) ? "0" : "1";
+	spawnArgs.Set( "seePlayer", kv );
+}
+
+/*
+================
+idSecurityCamera::Event_SeePlayer_State
+================
+*/
+void idSecurityCamera::Event_SeePlayer_State( bool set )
+{
+	const char *kv = ( set ) ? "1" : "0";
+	spawnArgs.Set( "seePlayer", kv );
+}
+
+/*
+================
+idSecurityCamera::Event_On
+================
+*/
+void idSecurityCamera::Event_On( void )
+{
+	if ( !powerOn ) {
+		Activate(NULL);
+	}
+}
+
+/*
+================
+idSecurityCamera::Event_Off
+================
+*/
+void idSecurityCamera::Event_Off( void )
+{
+	if ( powerOn ) {
+		Activate(NULL);
+	}
 }

@@ -235,41 +235,8 @@ static void MakeHeadnodePortals( tree_t *tree ) {
 
 //===================================================
 
-
-/*
-================
-BaseWindingForNode
-================
-*/
 #define	BASE_WINDING_EPSILON	0.001f
 #define	SPLIT_WINDING_EPSILON	0.001f
-
-idWinding *BaseWindingForNode (node_t *node) {
-	idWinding	*w;
-	node_t		*n;
-
-	w = new idWinding( dmapGlobals.mapPlanes[node->planenum] );
-
-	// clip by all the parents
-	for ( n = node->parent ; n && w ; ) {
-		idPlane &plane = dmapGlobals.mapPlanes[n->planenum];
-
-		if ( n->children[0] == node ) {
-			// take front
-			w = w->Clip( plane, BASE_WINDING_EPSILON );
-		} else {
-			// take back
-			idPlane	back = -plane;
-			w = w->Clip( back, BASE_WINDING_EPSILON );
-		}
-		node = n;
-		n = n->parent;
-	}
-
-	return w;
-}
-
-//============================================================
 
 /*
 ==================
@@ -280,36 +247,46 @@ and clipping it by all of parents of this node
 ==================
 */
 static void MakeNodePortal( node_t *node ) {
-	uPortal_t	*new_portal, *p;
-	idWinding	*w;
-	idVec3		normal;
-	int			side;
 
-	w = BaseWindingForNode (node);
+	idPlane plane = dmapGlobals.mapPlanes[node->planenum];
+	idList<idPlane> cuttingPlanes;
 
+	// clip by all the parents
+	for ( node_t *curr = node, *n = node->parent ; n ; ) {
+		idPlane &plane = dmapGlobals.mapPlanes[n->planenum];
+
+		if ( n->children[0] == curr ) {
+			// take front
+			cuttingPlanes.AddGrow(plane);
+		} else {
+			// take back
+			cuttingPlanes.AddGrow(-plane);
+		}
+		curr = n;
+		n = n->parent;
+	}
+
+	int side;
 	// clip the portal by all the other portals in the node
-	for (p = node->portals ; p && w; p = p->next[side])	
+	for (uPortal_t *p = node->portals ; p; p = p->next[side])	
 	{
-		idPlane	plane;
-
 		if (p->nodes[0] == node)
 		{
 			side = 0;
-			plane = p->plane;
+			cuttingPlanes.AddGrow(p->plane);
 		}
 		else if (p->nodes[1] == node)
 		{
 			side = 1;
-			plane = -p->plane;
+			cuttingPlanes.AddGrow(-p->plane);
 		}
 		else {
 			common->Error( "CutNodePortals_r: mislinked portal");
 			side = 0;	// quiet a compiler warning
 		}
-
-		w = w->Clip( plane, CLIP_EPSILON );
 	}
 
+	idWinding *w = idWinding::CreateTrimmedPlane(plane, cuttingPlanes.Num(), cuttingPlanes.Ptr(), BASE_WINDING_EPSILON);
 	if (!w)
 	{
 		return;
@@ -322,8 +299,7 @@ static void MakeNodePortal( node_t *node ) {
 		return;
 	}
 
-
-	new_portal = AllocPortal ();
+	uPortal_t *new_portal = AllocPortal ();
 	new_portal->plane = dmapGlobals.mapPlanes[node->planenum];
 	new_portal->onnode = node;
 	new_portal->winding = w;	

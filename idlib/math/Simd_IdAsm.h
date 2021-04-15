@@ -13,23 +13,26 @@
  
 ******************************************************************************/
 
-#ifndef __MATH_SIMD_GENERIC_H__
-#define __MATH_SIMD_GENERIC_H__
+#pragma once
+
+#include "Simd_SSE3.h"
 
 /*
 ===============================================================================
 
-	Generic implementation of idSIMDProcessor
+	Original ID's inline assembly (up to SSE3) for idSIMDProcessor
 
 ===============================================================================
 */
 
-class idSIMD_Generic : public idSIMDProcessor {
-protected:
-	idStr name;
+class idSIMD_IdAsm : public idSIMD_SSE3 {
 public:
-	idSIMD_Generic();
-	virtual const char * GetName( void ) const;
+	idSIMD_IdAsm();
+
+//stgatilov: only compile these functions on MSVC 32-bit
+#if defined(_MSC_VER) && defined(_M_IX86)
+
+	//========================= Uses SSE =============================
 
 	virtual void Add( float *dst,			const float constant,	const float *src,		const int count );
 	virtual void Add( float *dst,			const float *src0,		const float *src1,		const int count );
@@ -72,9 +75,6 @@ public:
 	virtual void ClampMin( float *dst,		const float *src,		const float min,		const int count );
 	virtual void ClampMax( float *dst,		const float *src,		const float max,		const int count );
 
-	virtual void Memcpy( void *dst,			const void *src,		const int count );
-	virtual void Memset( void *dst,			const int val,			const int count );
-
 	virtual void Zero16( float *dst,			const int count );
 	virtual void Negate16( float *dst,		const int count );
 	virtual void Copy16( float *dst,			const float *src,		const int count );
@@ -102,27 +102,32 @@ public:
 	virtual void ConvertJointMatsToJointQuats( idJointQuat *jointQuats, const idJointMat *jointMats, const int numJoints );
 	virtual void TransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint );
 	virtual void UntransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint );
-	virtual void TransformVerts( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, const int numWeights );
+	virtual void TransformVerts_SSE_( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, const int numWeights );
 	virtual void TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const idDrawVert *verts, const int numVerts );
 	virtual void DecalPointCull( byte *cullBits, const idPlane *planes, const idDrawVert *verts, const int numVerts );
 	virtual void OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const idDrawVert *verts, const int numVerts );
-	virtual void CalcTriFacing( const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes, const idVec3 &lightOrigin, byte *facing );
 	virtual void DeriveTriPlanes( idPlane *planes, const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes );
 	virtual void DeriveTangents( idPlane *planes, idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes );
 	virtual void DeriveUnsmoothedTangents( idDrawVert *verts, const dominantTri_s *dominantTris, const int numVerts );
 	virtual void NormalizeTangents( idDrawVert *verts, const int numVerts );
 	virtual int  CreateShadowCache( idVec4 *vertexCache, int *vertRemap, const idVec3 &lightOrigin, const idDrawVert *verts, const int numVerts );
 	virtual int  CreateVertexProgramShadowCache( idVec4 *vertexCache, const idDrawVert *verts, const int numVerts );
-	virtual void CullByFrustum( idDrawVert *verts, const int numVerts, const idPlane frustum[6], byte *pointCull, float epsilon );
-	virtual void CullByFrustum2( idDrawVert *verts, const int numVerts, const idPlane frustum[6], unsigned short *pointCull, float epsilon );
 
-	virtual void UpSamplePCMTo44kHz( float *dest, const short *pcm, const int numSamples, const int kHz, const int numChannels );
-	virtual void UpSampleOGGTo44kHz( float *dest, const float * const *ogg, const int numSamples, const int kHz, const int numChannels );
 	virtual void MixSoundTwoSpeakerMono( float *mixBuffer, const float *samples, const int numSamples, const float lastV[2], const float currentV[2] );
 	virtual void MixSoundTwoSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[2], const float currentV[2] );
 	virtual void MixSoundSixSpeakerMono( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] );
 	virtual void MixSoundSixSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] );
-	virtual void MixedSoundToSamples( short *samples, const float *mixBuffer, const int numSamples );
-};
+	virtual void MixedSoundToSamples_SSE_( short *samples, const float *mixBuffer, const int numSamples );
 
-#endif /* !__MATH_SIMD_GENERIC_H__ */
+	//========================= Uses SSE2 =============================
+
+	//virtual void MatX_LowerTriangularSolve( const idMatX &L, float *x, const float *b, const int n, int skip = 0 );
+	//virtual void MatX_LowerTriangularSolveTranspose( const idMatX &L, float *x, const float *b, const int n );
+	virtual void MixedSoundToSamples( short *samples, const float *mixBuffer, const int numSamples );
+
+	//========================= Uses SSE3 =============================
+
+	virtual void TransformVerts( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, const int numWeights );
+
+#endif
+};

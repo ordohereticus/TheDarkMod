@@ -2648,7 +2648,7 @@ void idFileSystemLocal::Shutdown( bool reloading ) {
 
 	searchpath_t *sp, *next, *loop;
 
-	gameFolder.Clear();
+	gameFolder.ClearFree();
 	serverPaks.ClearFree();
 
 	if ( !reloading ) {
@@ -2692,7 +2692,7 @@ void idFileSystemLocal::Shutdown( bool reloading ) {
 	cmdSystem->RemoveCommand( "dirtree" );
 	cmdSystem->RemoveCommand( "touchFile" );
 
-	mapDict.Clear();
+	mapDict.ClearFree();
 }
 
 /*

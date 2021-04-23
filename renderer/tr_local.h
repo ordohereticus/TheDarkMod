@@ -841,8 +841,6 @@ public:
 
 public:
 	// renderer globals
-	bool					registered;			// cleared at shutdown, set at InitOpenGL
-
 	bool					takingScreenshot;
 
 	int						frameCount;			// incremented every frame
@@ -880,8 +878,6 @@ public:
 	viewDef_t 				*viewDef;
 
 	performanceCounters_t	pc;					// performance counters
-
-	drawSurfsCommand_t		lockSurfacesCmd;	// use this when r_lockSurfaces = 1
 
 	viewEntity_t			identitySpace;		// can use if we don't know viewDef->worldSpace is valid
 	FILE 					*logFile;			// for logging GL calls and frame breaks

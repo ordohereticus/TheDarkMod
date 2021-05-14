@@ -466,7 +466,7 @@ void CDownloadMenu::StartDownload(idUserInterface* gui)
 			DM_LOG(LC_MAINMENU, LT_INFO)LOGSTRING("Will download the l10n pack to %s.", l10nPackPath.c_str());
 
 			CDownloadPtr l10nDownload(new CDownload(mod.l10nPackUrls, l10nPackPath, true));
-			download->VerifySha256Checksum(mod.l10nPackSha256);
+			l10nDownload->VerifySha256Checksum(mod.l10nPackSha256);
 
 			l10nId = gameLocal.m_DownloadManager->AddDownload(l10nDownload);
 
@@ -758,6 +758,11 @@ void CDownloadMenu::ShowDownloadResult(idUserInterface* gui)
 		break;
 		};
 	}
+
+	// stgatilov: save missions.tdminfo right now!
+	// otherwise the information about downloaded version will be lost
+	// if the game crashes before proper exit/restart
+	gameLocal.m_MissionManager->SaveDatabase();
 
 	gameLocal.Printf("Successful downloads: %d\nFailed downloads: %d\n", successfulDownloads, failedDownloads);
 		// Display the popup box

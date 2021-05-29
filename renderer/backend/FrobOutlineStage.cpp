@@ -1,15 +1,15 @@
 /*****************************************************************************
-                    The Dark Mod GPL Source Code
+The Dark Mod GPL Source Code
 
- This file is part of the The Dark Mod Source Code, originally based
- on the Doom 3 GPL Source Code as published in 2011.
+This file is part of the The Dark Mod Source Code, originally based
+on the Doom 3 GPL Source Code as published in 2011.
 
- The Dark Mod Source Code is free software: you can redistribute it
- and/or modify it under the terms of the GNU General Public License as
- published by the Free Software Foundation, either version 3 of the License,
- or (at your option) any later version. For details, see LICENSE.TXT.
+The Dark Mod Source Code is free software: you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. For details, see LICENSE.TXT.
 
- Project: The Dark Mod (http://www.thedarkmod.com/)
+Project: The Dark Mod (http://www.thedarkmod.com/)
 
 ******************************************************************************/
 #include "precompiled.h"
@@ -18,7 +18,6 @@
 #include "../glsl.h"
 #include "../GLSLProgram.h"
 #include "../GLSLProgramManager.h"
-#include "../Profiling.h"
 #include "../tr_local.h"
 #include "../FrameBuffer.h"
 #include "../FrameBufferManager.h"
@@ -97,7 +96,7 @@ void FrobOutlineStage::DrawFrobOutline( drawSurf_t **drawSurfs, int numDrawSurfs
 	if ( outlineSurfs.Num() == 0 )
 		return;
 
-	GL_PROFILE( "DrawFrobOutline" )
+	TRACE_GL_SCOPE( "DrawFrobOutline" )
 
 	GL_ScissorRelative( 0, 0, 1, 1 );
 

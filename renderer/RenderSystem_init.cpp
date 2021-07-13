@@ -1027,11 +1027,11 @@ void idRenderSystemLocal::TakeScreenshot( int width, int height, const char *fil
 		Screenshot_ChangeFilename( changedPath, extension );
 	}
 
-	idFile *f = fileSystem->OpenFileWrite( changedPath.c_str(), "fs_savepath", "" );
 	idImageWriter writer;
-	writer.Source( buffer, width, height, 3 ).Dest( f );
+	writer.Source( buffer, width, height, 3 );
+	writer.Dest( fileSystem->OpenFileWrite( changedPath.c_str(), "fs_savepath", "" ) );
 	writer.Flip();
-	writer.ToExtension( extension.c_str() );
+	writer.WriteExtension( extension.c_str() );
 	common->Printf( "Wrote %s\n", changedPath.c_str() );
 
 	R_StaticFree( buffer );
@@ -1368,7 +1368,7 @@ void R_MakeAmbientMap_f( const idCmdArgs &args ) {
 		sprintf( fullname, "env/%s%s", baseName, cubeExtensions[i] );
 		common->Printf( "loading %s\n", fullname.c_str() );
 		session->UpdateScreen();
-		R_LoadImage( fullname, &param.buffers[i], &param.size, &param.size, NULL, true );
+		R_LoadImage( fullname, &param.buffers[i], &param.size, &param.size, NULL );
 		if ( !param.buffers[i] ) {
 			common->Printf( "failed.\n" );
 			for ( i-- ; i >= 0 ; i-- ) {

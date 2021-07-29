@@ -1679,29 +1679,55 @@ void idGameLocal::HotReloadMap(const char *mapDiff, bool skipTimestampCheck) {
 			continue;
 		}
 
+		//update spawnargs dict in entity
 		gameEdit->EntityChangeSpawnArgs( ent, &diffArgs );
-		//this method has broken conventions about what spawnargs should be passed
-		//the only correct way is to pass NULL, meaning that all existing spawnargs were modified
-		//all the other approaches break something, e.g. inherited spawnargs
-		gameEdit->EntityUpdateChangeableSpawnArgs( ent, NULL );
-		if (lodChanged) {
-			gameEdit->EntityUpdateLOD(ent, newArgs);
-		}
+
+		//compute new spawnargs with inherited props
+		const char *newClassname = newArgs.GetString("classname");
+		const idDeclEntityDef *newEntityDef = gameLocal.FindEntityDef(newClassname, false);
+		idDict newArgsInherited = newArgs;
+		newArgsInherited.SetDefaults(&newEntityDef->dict, idStr("editor_"));
+
+		if (diffArgs.FindKey("rotate") || diffArgs.FindKey("translate"))
+			if (ent->IsType(CBinaryFrobMover::Type)) {
+				((CBinaryFrobMover*)ent)->SetFractionalPosition(0.0, true);
+				((CBinaryFrobMover*)ent)->Event_PostSpawn();
+			}
 		if (diffArgs.FindKey("model")) {
-			idStr newModel = newArgs.GetString("model");
+			idStr newModel = newArgsInherited.GetString("model");
 			gameEdit->EntitySetModel(ent, newModel);
 		}
 		if (diffArgs.FindKey("skin")) {
-			idStr newSkin = diffArgs.GetString("skin");
-			ent->PostEventMS(&EV_SetSkin, 0, newSkin);
+			idStr newSkin = newArgsInherited.GetString("skin");
+			ent->Event_SetSkin(newSkin);
+		}
+		if (diffArgs.FindKey("noshadows")) {
+			bool newNoShadows = newArgsInherited.GetBool("noshadows");
+			ent->Event_noShadows(newNoShadows);
+		}
+		if (lodChanged) {
+			gameEdit->EntityUpdateLOD(ent);
 		}
 		if (diffArgs.FindKey("origin")) {
-			idVec3 newOrigin = newArgs.GetVector("origin");
+			idVec3 newOrigin = newArgsInherited.GetVector("origin");
 			gameEdit->EntitySetOrigin(ent, newOrigin);
 		}
-		if (diffArgs.FindKey("rotation")) {
-			idMat3 newAxis = newArgs.GetMatrix("rotation");
+		if (diffArgs.FindKey("rotation") || diffArgs.FindKey("angle")) {
+			idMat3 newAxis = newArgsInherited.GetMatrix("rotation");
+			if (!newArgsInherited.FindKey("rotation"))
+				newAxis = idAngles(0.0f, newArgsInherited.GetFloat("angle"), 0.0f).ToMat3();
 			gameEdit->EntitySetAxis(ent, newAxis);
+		}
+		if (diffArgs.FindKey("_color") || diffArgs.MatchPrefix("shaderParm")) {
+			gameEdit->EntityUpdateShaderParms(ent);
+		}
+		if (ent->IsType(idLight::Type)) {
+			gameEdit->ParseSpawnArgsToRenderLight(&newArgsInherited, ((idLight*)ent)->GetRenderLight());
+		}
+		if (diffArgs.MatchPrefix("target")) {
+			//note: rebuild list of targets on NEXT frame
+			//in case we will spawn some targeted entity in this diff bundle
+			ent->PostEventMS(&EV_FindTargets, 0);
 		}
 
 		gameEdit->EntityUpdateVisuals( ent );

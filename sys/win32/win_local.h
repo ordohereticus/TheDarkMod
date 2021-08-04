@@ -44,6 +44,7 @@ void	IN_ActivateMouse( void );
 void	IN_Frame( void );
 
 int		IN_DIMapKey( int key );
+void	Sys_StdMouseInput( UINT uMsg, WPARAM wParam, LPARAM lParam );
 
 
 // window procedure
@@ -102,7 +103,6 @@ typedef struct {
 	HINSTANCE		hInstDI;			// direct input
 
 	LPDIRECTINPUT8			g_pdi;
-	LPDIRECTINPUTDEVICE8	g_pMouse;
 	LPDIRECTINPUTDEVICE8	g_pKeyboard;
 
 	//windows 10 dpi scaling api

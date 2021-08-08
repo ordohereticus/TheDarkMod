@@ -17,34 +17,14 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #pragma hdrstop
 
 
+#ifdef NO_MFC
 #include <Windowsx.h>
+#endif
 #include "win_local.h"
 #include "../../renderer/tr_local.h"
 
-#define DINPUT_BUFFERSIZE           256
-
 #define CHAR_FIRSTREPEAT 200
 #define CHAR_REPEAT 100
-
-typedef struct MYDATA {
-	LONG  lX;                   // X axis goes here
-	LONG  lY;                   // Y axis goes here
-	LONG  lZ;                   // Z axis goes here
-	BYTE  bButtonA;             // One button goes here
-	BYTE  bButtonB;             // Another button goes here
-	BYTE  bButtonC;             // Another button goes here
-	BYTE  bButtonD;             // Another button goes here
-} MYDATA;
-
-static DIOBJECTDATAFORMAT rgodf[] = {
-  { &GUID_XAxis,    FIELD_OFFSET(MYDATA, lX),       DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
-  { &GUID_YAxis,    FIELD_OFFSET(MYDATA, lY),       DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
-  { &GUID_ZAxis,    FIELD_OFFSET(MYDATA, lZ),       0x80000000 | DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
-  { 0,              FIELD_OFFSET(MYDATA, bButtonA), DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
-  { 0,              FIELD_OFFSET(MYDATA, bButtonB), DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
-  { 0,              FIELD_OFFSET(MYDATA, bButtonC), 0x80000000 | DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
-  { 0,              FIELD_OFFSET(MYDATA, bButtonD), 0x80000000 | DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
-};
 
 //==========================================================================
 
@@ -251,15 +231,6 @@ static const unsigned char *keyScanTable = s_scantokey;
 static unsigned char	rightAltKey = K_ALT;
 
 #define NUM_OBJECTS (sizeof(rgodf) / sizeof(rgodf[0]))
-
-static DIDATAFORMAT	df = {
-	sizeof(DIDATAFORMAT),       // this structure
-	sizeof(DIOBJECTDATAFORMAT), // size of object data format
-	DIDF_RELAXIS,               // absolute axis coordinates
-	sizeof(MYDATA),             // device data size
-	NUM_OBJECTS,                // number of objects
-	rgodf,                      // and here they are
-};
 
 /*
 ==========================
@@ -514,11 +485,6 @@ void Sys_StdKeyboardInput( UINT uMsg, WPARAM wParam, LPARAM lParam ) {
 	switch ( uMsg ) {
 	case WM_KEYDOWN:
 		key = MapKey( lParam );
-		if ( key == K_CTRL || key == K_ALT || key == K_RIGHT_ALT ) {
-			// let direct-input handle this because windows sends Alt-Gr
-			// as two events (ctrl then alt)
-			break;
-		}
 		Sys_QueEvent( win32.sysMsgTime, SE_KEY, key, true, 0, NULL );
 		keyboardInputEvents.Append( { key, 1 } );
 		break;
@@ -575,7 +541,7 @@ void Sys_StdMouseInput( UINT uMsg, WPARAM wParam, LPARAM lParam ) {
 		int centerY = glConfig.vidHeight / 2;
 		int xPos = GET_X_LPARAM( lParam ) - centerX;
 		int yPos = GET_Y_LPARAM( lParam ) - centerY;
-		Sys_QueEvent( win32.sysMsgTime, SE_MOUSE, xPos, yPos );
+		Sys_QueEvent( win32.sysMsgTime, SE_MOUSE, xPos, yPos, 0, NULL );
 		if ( xPos || yPos ) {
 			POINT p = { centerX, centerY };
 			if ( ClientToScreen( win32.hWnd, &p ) )
@@ -589,17 +555,17 @@ void Sys_StdMouseInput( UINT uMsg, WPARAM wParam, LPARAM lParam ) {
 	}
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONUP:
-		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE1, WM_LBUTTONUP - uMsg );
+		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE1, WM_LBUTTONUP - uMsg, 0, NULL );
 		mouseInputEvents.Append( { M_ACTION1, WM_LBUTTONUP - (int)uMsg } );
 		break;
 	case WM_RBUTTONDOWN:
 	case WM_RBUTTONUP:
-		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE2, WM_RBUTTONUP - uMsg );
+		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE2, WM_RBUTTONUP - uMsg, 0, NULL );
 		mouseInputEvents.Append( { M_ACTION2, WM_RBUTTONUP - (int) uMsg } );
 		break;
 	case WM_MBUTTONDOWN:
 	case WM_MBUTTONUP:
-		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE3, WM_MBUTTONUP - uMsg );
+		Sys_QueEvent( win32.sysMsgTime, SE_KEY, K_MOUSE3, WM_MBUTTONUP - uMsg, 0, NULL );
 		mouseInputEvents.Append( { M_ACTION3, WM_MBUTTONUP - (int) uMsg } );
 		break;
 	}

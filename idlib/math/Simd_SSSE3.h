@@ -13,14 +13,26 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 ******************************************************************************/
 
-#include "precompiled.h"
-#pragma hdrstop
+#ifndef __MATH_SIMD_SSSE3_H__
+#define __MATH_SIMD_SSSE3_H__
 
-#include "Simd_SSE3.h"
+#include "Simd_SSE2.h"
 
-idSIMD_SSE3::idSIMD_SSE3() {
-	name = "SSE3";
-}
+/*
+===============================================================================
+
+	SSSE3 implementation of idSIMDProcessor
+
+===============================================================================
+*/
+
+class idSIMD_SSSE3 : public idSIMD_SSE2 {
+public:
+	idSIMD_SSSE3();
 
 #ifdef ENABLE_SSE_PROCESSORS
+	virtual bool ConvertTargaRowToRGBA8( const byte *srcPtr, int width, int bitsPerPixel, byte *dstPtr ) override;
 #endif
+};
+
+#endif /* !__MATH_SIMD_SSSE3_H__ */

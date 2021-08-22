@@ -332,7 +332,7 @@ int idSoundChannel::GatherSubtitles( int sampleOffset44k, idList<SubtitleMatch> 
 	if ( !leadin || sampleOffset44k < 0 ) {
 		return 0;
 	}
-	if ( parms.subtitlesLevel > level ) {
+	if ( leadin->subtitlesVerbosity > level ) {
 		return 0;
 	}
 

@@ -20,6 +20,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "snd_local.h"
 #include <limits.h>
 #include "LoadStack.h"
+#include "DeclSubtitles.h"
 
 #define USE_SOUND_CACHE_ALLOCATOR
 
@@ -127,22 +128,31 @@ idSoundCache::LoadSubtitles()
 ===================
 */
 void idSoundSample::LoadSubtitles() {
-	idStr srtFileName;
+	subtitles.Clear();
+	subtitlesVerbosity = SUBL_MISSING;
 
-	//get filename of main file
-	if ( cinematic ) {
-		if ( const char *filename = cinematic->GetFilePath() ) {
-			srtFileName = filename;
-		} else {
-			return;
-		}
-	} else {
-		srtFileName = name;
+	const idDeclSubtitles *allSubs = (idDeclSubtitles *) declManager->FindType( DECL_SUBTITLES, "root" );
+	if ( !allSubs )
+		return;
+
+	const subtitleMapping_t *mapping = allSubs->FindSubtitleForSound( name.c_str() );
+	if ( !mapping )
+		return;
+
+	subtitlesVerbosity = mapping->verbosityLevel;
+
+	if ( mapping->srtFileName.Length() ) {
+		// load .srt file
+		LoadSrtFile( mapping->srtFileName.c_str(), subtitles );
 	}
-
-	//load .srt
-	srtFileName.SetFileExtension( ".srt" );
-	LoadSrtFile( srtFileName.c_str(), subtitles );
+	else {
+		// inline subtitle
+		Subtitle sub;
+		sub.offsetStart = 0;
+		sub.offsetEnd = LengthIn44kHzSamples();
+		sub.text = mapping->inlineText;
+		subtitles.Append(sub);
+	}
 }
 
 /*
@@ -241,12 +251,24 @@ Completely nukes the current cache
 ===================
 */
 void idSoundCache::ReloadSounds( bool force ) {
-	int i;
-
-	for( i = 0; i < listCache.Num(); i++ ) {
+	for( int i = 0; i < listCache.Num(); i++ ) {
 		idSoundSample *def = listCache[i];
 		if ( def ) {
 			def->Reload( force );
+		}
+	}
+}
+
+/*
+===================
+idSoundCache::ReloadSubtitles
+===================
+*/
+void idSoundCache::ReloadSubtitles() {
+	for( int i = 0; i < listCache.Num(); i++ ) {
+		idSoundSample *def = listCache[i];
+		if ( def ) {
+			def->LoadSubtitles();
 		}
 	}
 }
@@ -406,6 +428,7 @@ idSoundSample::idSoundSample() {
 	purged = false;
 	levelLoadReferenced = false;
 	cinematic = NULL;
+	subtitlesVerbosity = SUBL_MISSING;
 }
 
 /*
@@ -481,6 +504,7 @@ void idSoundSample::MakeDefault( void ) {
 	defaultSound = true;
 
 	subtitles.Clear();
+	subtitlesVerbosity = SUBL_MISSING;
 }
 
 /*
@@ -556,6 +580,8 @@ void idSoundSample::LoadFromCinematic(idCinematic *cin) {
 
 	//cinematic decides when it ends: set infinite duration here
 	objectSize = INT_MAX / 2;
+
+	LoadSubtitles();
 }
 
 /*
@@ -572,14 +598,16 @@ void idSoundSample::Load( void ) {
 	hardwareBuffer = false;
 
 	//stgatilov #4847: check if this sound was created via testVideo command
-	if (name.CmpPrefix("__testvideo") == 0) {
+	if (name.IcmpPrefix("__testvideo") == 0) {
 		idCinematic *cin = 0;
 		sscanf(name.c_str(), "__testvideo:%p__", &cin);
 		return LoadFromCinematic(cin);
 	}
-	//stgatilov #4534: material name may be specified instead of sound file
-	//in such case this material must have cinematics, and sound is taken from there
-	if (const idMaterial *material = declManager->FindMaterial(name, false)) {
+	if (name.IcmpPrefix("fromVideo ") == 0) {
+		//stgatilov #4534: material name is specified after "fromVideo" prefix
+		//in such case this material must have cinematics, and sound is taken from there
+		const char *materialName = name.c_str() + 10;
+		const idMaterial *material = declManager->FindMaterial(materialName);
 		idCinematic *cin = material->GetCinematic();
 		return LoadFromCinematic(cin);
 	}
@@ -718,6 +746,8 @@ void idSoundSample::Load( void ) {
 	}
 
 	fh.Close();
+
+	LoadSubtitles();
 }
 
 /*

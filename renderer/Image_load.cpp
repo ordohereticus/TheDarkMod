@@ -404,6 +404,7 @@ There is no way to specify explicit mip map levels
 ================
 */
 idCVar image_useTexStorage( "image_useTexStorage", "1", CVAR_BOOL|CVAR_ARCHIVE, "Use glTexStorage to create image storage. Only disable if you run into issues." );
+idCVar image_mipmapMode( "image_mipmapMode", "2", CVAR_INTEGER|CVAR_ARCHIVE, "0 - generate mipmaps on CPU, 2 - use glGenerateMipmap." );
 
 void idImage::GenerateImage( const byte *pic, int width, int height,
                              textureFilter_t filterParm, bool allowDownSizeParm,
@@ -467,28 +468,16 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	} else {
 		// resample down as needed (FIXME: this doesn't seem like it resamples anymore!)
 		scaledBuffer = R_MipMap( pic, width, height);
-		width >>= 1;
-		height >>= 1;
-		if ( width < 1 ) {
-			width = 1;
-		}
-		if ( height < 1 ) {
-			height = 1;
-		}
+		width = idMath::Imax( width >> 1, 1 );
+		height = idMath::Imax( height >> 1, 1 );
 
 		while ( width > scaled_width || height > scaled_height ) {
 			shrunk = R_MipMap( scaledBuffer, width, height);
 			R_StaticFree( scaledBuffer );
 			scaledBuffer = shrunk;
 
-			width >>= 1;
-			height >>= 1;
-			if ( width < 1 ) {
-				width = 1;
-			}
-			if ( height < 1 ) {
-				height = 1;
-			}
+			width = idMath::Imax( width >> 1, 1 );
+			height = idMath::Imax( height >> 1, 1 );
 		}
 
 		// one might have shrunk down below the target size
@@ -498,23 +487,6 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	uploadHeight = scaled_height;
 	uploadWidth = scaled_width;
 	type = TT_2D;
-
-	// zero the border if desired, allowing clamped projection textures
-	// even after picmip resampling or careless artists.
-	/*if ( repeat == TR_CLAMP_TO_ZERO ) {
-		byte	rgba[4];
-
-		rgba[0] = rgba[1] = rgba[2] = 0;
-		rgba[3] = 255;
-		R_SetBorderTexels( ( byte * )scaledBuffer, width, height, rgba );
-	}
-	if ( repeat == TR_CLAMP_TO_ZERO_ALPHA ) {
-		byte	rgba[4];
-
-		rgba[0] = rgba[1] = rgba[2] = 255;
-		rgba[3] = 0;
-		R_SetBorderTexels( ( byte * )scaledBuffer, width, height, rgba );
-	}*/
 
 	if ( generatorFunction == NULL && ( ( depth == TD_BUMP && globalImages->image_writeNormalTGA.GetBool() ) || ( depth != TD_BUMP && globalImages->image_writeTGA.GetBool() ) ) ) {
 		// Optionally write out the texture to a .tga
@@ -537,16 +509,46 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	GL_CheckErrors();
 	GL_SetDebugLabel( GL_TEXTURE, texnum, imgName );
 
+	//stgatilov: OpenGL does not guarantee compressing glTexSubImage to work for sizes not divisible by 4, and AMD driver crashes on it
+	//https://forums.thedarkmod.com/index.php?/topic/21073-a-house-of-locked-secrets-crashes-tdm-on-startup/
+	bool crossesCompressionBlocks = FormatIsDXT( internalFormat ) && ( scaled_width % 4 || scaled_height % 4 );
+	bool useTexStorage = GLAD_GL_ARB_texture_storage && !generatorFunction && !crossesCompressionBlocks && image_useTexStorage.GetBool();
+
 	//Routine test( &uploading );
 	auto start = Sys_Milliseconds();
-	if ( GLAD_GL_ARB_texture_storage && !generatorFunction && image_useTexStorage.GetBool() ) {
-		int levels = 1 + idMath::ILog2( Max( scaled_width, scaled_height ) );
-		qglTexStorage2D( GL_TEXTURE_2D, levels, internalFormat, scaled_width, scaled_height);
+	int mipLevels = 1 + idMath::ILog2( Max( scaled_width, scaled_height ) );
+	if ( useTexStorage ) {
+		qglTexStorage2D( GL_TEXTURE_2D, mipLevels, internalFormat, scaled_width, scaled_height);
 		qglTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, scaled_width, scaled_height, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
 	} else {
 		qglTexImage2D( GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
 	}
-	qglGenerateMipmap( GL_TEXTURE_2D );
+
+	if ( image_mipmapMode.GetInteger() == 0 ) {
+		TRACE_CPU_SCOPE ("generatemipmap" );
+		qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipLevels - 1 );
+		byte *currentMip = scaledBuffer;
+		int w = scaled_width, h = scaled_height;
+		for ( int lvl = 1; lvl < mipLevels; lvl++ ) {
+			byte *nextMip = R_MipMap( currentMip, w, h );
+			w = idMath::Imax( w >> 1, 1 );
+			h = idMath::Imax( h >> 1, 1 );
+			if ( useTexStorage )
+				qglTexSubImage2D( GL_TEXTURE_2D, lvl, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, nextMip );
+			else
+				qglTexImage2D( GL_TEXTURE_2D, lvl, internalFormat, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nextMip );
+			if ( currentMip != scaledBuffer )
+				R_StaticFree( currentMip );
+			currentMip = nextMip;
+		}
+		if ( currentMip != scaledBuffer )
+			R_StaticFree( currentMip );
+	}
+	else {
+		TRACE_CPU_SCOPE( "generatemipmap" );
+		TRACE_GL_SCOPE( "generatemipmap" );
+		qglGenerateMipmap( GL_TEXTURE_2D );
+	}
 	GL_CheckErrors();
 	backEnd.pc.textureUploadTime += (Sys_Milliseconds() - start);
 

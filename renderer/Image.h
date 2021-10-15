@@ -174,6 +174,7 @@ typedef struct imageCompressedData_s {
 	static int TotalSizeFromFileSize(int fileSize) { return fileSize + 8; }
 	static int TotalSizeFromContentSize(int contentSize) { return TotalSizeFromFileSize(FileSizeFromContentSize(contentSize)); }
 	int GetTotalSize() const { return TotalSizeFromFileSize(fileSize); }
+	byte *ComputeUncompressedData() const;
 } imageCompressedData_t;
 static_assert(offsetof(imageCompressedData_s, contents) - offsetof(imageCompressedData_s, magic) == 128, "Wrong imageCompressedData_t layout");
 
@@ -234,7 +235,7 @@ public:
 	bool		CheckPrecompressedImage( bool fullLoad );
 	void		UploadPrecompressedImage( void );
 	void		ActuallyLoadImage( bool allowBackground = false );
-	int			BitsForInternalFormat( int internalFormat ) const;
+	static int			BitsForInternalFormat( int internalFormat );
 	GLenum		SelectInternalFormat( const byte **dataPtrs, int numDataPtrs, int width, int height, textureDepth_t minimumDepth ) const;
 	void		ImageProgramStringToCompressedFileName( const char *imageProg, char *fileName ) const;
 	int			NumLevelsForImageSize( int width, int height ) const;
@@ -466,6 +467,7 @@ IMAGEFILES
 */
 
 void R_LoadImage( const char *name, byte **pic, int *width, int *height, ID_TIME_T *timestamp );
+void R_LoadCompressedImage( const char *name, imageCompressedData_t **pic, ID_TIME_T *timestamp );
 // pic is in top to bottom raster format
 bool R_LoadCubeImages( const char *cname, cubeFiles_t extensions, byte *pic[6], int *size, ID_TIME_T *timestamp );
 void R_MakeAmbientMap( MakeAmbientMapParam param );

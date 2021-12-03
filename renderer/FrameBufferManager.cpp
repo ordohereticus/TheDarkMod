@@ -272,9 +272,11 @@ void FrameBufferManager::CreateGui( FrameBuffer *gui ) {
 	gui->AddColorRenderTexture( 0, globalImages->guiRenderImage );
 }
 
-void FrameBufferManager::CopyRender( idImage *image, int x, int y, int imageWidth, int imageHeight ) {
-	if ( image->texnum == idImage::TEXTURE_NOT_LOADED ) // 5257
-		image->MakeDefault();
+void FrameBufferManager::CopyRender( idImage* image, int x, int y, int imageWidth, int imageHeight ) {
+	if ( image->texnum == idImage::TEXTURE_NOT_LOADED ) { // 5257
+		image->generatorFunction = R_RGBA8Image; // otherwise texstorage (when enabled) makes the texture immutable
+		R_RGBA8Image( image ); // image->MakeDefault() can produce a compressed image, unsuitable for copying into
+	}
 	image->Bind();
 	if ( activeFbo == primaryFbo || activeFbo == resolveFbo ) {
 		x *= r_fboResolution.GetFloat();
@@ -286,7 +288,7 @@ void FrameBufferManager::CopyRender( idImage *image, int x, int y, int imageWidt
 	if ( image->uploadWidth != imageWidth || image->uploadHeight != imageHeight ) {
 		image->uploadWidth = imageWidth;
 		image->uploadHeight = imageHeight;
-		qglCopyTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, x, y, imageWidth, imageHeight, 0 );
+		qglCopyTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, x, y, imageWidth, imageHeight, 0 );
 	} else {
 		// otherwise, just subimage upload it so that drivers can tell we are going to be changing
 		// it and don't try and do a texture compression or some other silliness

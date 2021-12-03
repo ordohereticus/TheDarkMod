@@ -387,7 +387,6 @@ typedef struct viewLight_s {
 	idPlane					lightProject[4];			// light project used by backend
 	idPlane					fogPlane;					// fog plane for backend fog volume rendering
 	srfTriangles_t 			*frustumTris;				// light frustum for backend fog volume rendering
-	srfTriangles_t			frustumTrisExact;
 	lightShadows_t 			shadows;					// per-light shadowing mode, not always == r_shadows
 	const idMaterial 		*lightShader;				// light shader used by backend
 	const float				*shaderRegisters;			// shader registers used by backend
@@ -466,6 +465,7 @@ typedef struct viewDef_s {
 	bool				isSubview;				// true if this view is not the main view
 	bool				isMirror;				// the portal is a mirror, invert the face culling
 	xrayEntityMask_t	xrayEntityMask;
+	bool				hasXraySubview;
 
 	bool				isEditor;
 

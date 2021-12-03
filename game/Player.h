@@ -57,6 +57,7 @@ extern const idEventDef EV_TriggerMissionEnd;
 extern const idEventDef EV_Player_GetLocation;
 extern const idEventDef EV_Player_GetFrobbed;
 extern const idEventDef EV_Player_SetFrobOnlyUsedByInv;
+extern const idEventDef EV_Player_GetCalibratedLightgemValue;
 
 // tels: #3282
 extern const idEventDef EV_Player_GetShouldered;
@@ -961,6 +962,7 @@ public:
 
 	// Returns the current lightgem value
 	int GetCurrentLightgemValue() { return m_LightgemValue; }
+	float GetCalibratedLightgemValue();
 
 	// Runs the (strong) lightgem calculation, returns the resulting value
 	int		ProcessLightgem(bool processing);
@@ -1303,8 +1305,8 @@ private:
 	void					Event_Gibbed( void );
 	void					Event_GetIdealWeapon( void );
 	void					Event_RopeRemovalCleanup( idEntity *RopeEnt );
-
-
+	void					Event_GetCalibratedLightgemValue( void );
+	
 /**
 * TDM Events
 **/

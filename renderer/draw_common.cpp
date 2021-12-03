@@ -1027,6 +1027,8 @@ void RB_VolumetricPass() {
 		return;
 	bool useShadows = !( vLight->lightShader->IsAmbientLight() || !vLight->shadowMapIndex ) && cv_lod_bias.GetFloat() >= 2;
 	GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | GLS_DEPTHFUNC_ALWAYS );
+	//out of two fragments, render the farther one
+	GL_Cull( CT_BACK_SIDED );
 
 	GL_SelectTexture( 0 );
 	auto image = backEnd.vLight->lightShader->GetStage( 0 )->texture.image;
@@ -1080,17 +1082,7 @@ void RB_VolumetricPass() {
 	qglDisable( GL_SCISSOR_TEST );
 
 	drawSurf_t			ds;
-	auto* frustumTris = &backEnd.vLight->frustumTrisExact;
-
-	auto extract = []( srfTriangles_t& tri, idDrawVert *verts ) {
-		for ( int i = 0; i < tri.numIndexes; i++ ) {
-			verts[i] = tri.verts[tri.indexes[i]];
-		}
-	};
-
-	idDrawVert v1[36], v2[36];
-	extract( *backEnd.vLight->frustumTris, v1 );
-	extract( backEnd.vLight->frustumTrisExact, v2 );
+	srfTriangles_t* frustumTris = backEnd.vLight->frustumTris;
 
 	// if we ran out of vertex cache memory, skip it
 	if ( !frustumTris->ambientCache.IsValid() ) {
@@ -1110,6 +1102,7 @@ void RB_VolumetricPass() {
 	GLSLProgram::Deactivate();
 
 	GL_State( GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | GLS_DEPTHFUNC_EQUAL );
+	GL_Cull( CT_FRONT_SIDED );	//default?
 }
 
 /*

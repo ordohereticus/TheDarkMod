@@ -14,6 +14,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 ******************************************************************************/
 #version 430
 
+#pragma tdm_include "tdm_lightproject.glsl"
+
 layout(binding=0) uniform sampler2D s_projection;
 layout(binding=1) uniform sampler2D s_falloff;
 layout(binding=2) uniform sampler2D s_depth;
@@ -73,110 +75,76 @@ void ShadowAtlasForVector(vec3 v, out vec4 depthSamples, out vec2 sampleWeights)
 	sampleWeights = fract(shadow2d * texSize + -0.5);
 }
 
-mat4 projMatrixInv = inverse(u_MVP[1]);
-
-// this is supposed to get the world position from the depth buffer
-vec3 ViewPosFromDepth(float depth) {
-    float z = depth * 2.0 - 1.0;
-
-	vec2 TexCoord = gl_FragCoord.xy / textureSize(s_depth, 0);
-    vec4 clipSpacePosition = vec4(TexCoord * 2.0 - 1.0, z, 1.0);
-    vec4 viewSpacePosition = projMatrixInv * clipSpacePosition;
-
-    // Perspective division
-    viewSpacePosition /= viewSpacePosition.w;
-	return viewSpacePosition.xyz;
+//returns eye Z coordinate with reversed sign (monotonically increasing with depth)
+//TODO: move this to common include?...
+float depthToZ(float depth) {
+	float clipZ = 2.0 * depth - 1.0;
+	float A = u_MVP[1][2].z;
+	float B = u_MVP[1][3].z;
+	return B / (A + clipZ);
 }
 
-float calcCylinder(vec4 startPos, vec4 exitPoint) {
-	// return .93;
-	vec4 p1 = startPos * u_lightProject;
-	vec4 p2 = exitPoint * u_lightProject;
-	p1.xy /= p1.z;
-	p2.xy /= p2.z;
-	vec4 mid = (p1+p2)/2;
-	float fromCenter = distance(mid.xy, vec2(0.5));
-	float cap = 0.3 - fromCenter;
-	return cap > 0 ? pow(cap * 1e-3, .3) * 3e1 : 0;
-} 
-
 // get N samples from the fragment-view ray inside the frustum
-vec3 calcWithShadows(vec4 startPos, vec4 exitPoint) {
-	// return vec3(1, 1, .4);
-	vec3 color = vec3(0);
-	// for(float i=0; i<1; i++) {
-	for(float i=0; i<u_sampleCount; i++) {
-		vec4 samplePos = mix(startPos, exitPoint, i/u_sampleCount);
-			// shadow test
-			vec3 light2fragment = samplePos.xyz - u_lightOrigin;
-			float lit = 1;
-			if(u_shadows) {
-				vec4 depthSamples;
-				vec2 sampleWeights;
-				ShadowAtlasForVector(normalize(light2fragment), depthSamples, sampleWeights);
-				vec3 absL = abs(light2fragment);
-				float maxAbsL = max(absL.x, max(absL.y, absL.z));
-				vec4 lit4 = vec4(lessThan(vec4(maxAbsL), depthSamples));
-				lit = mix(mix(lit4.w, lit4.z, sampleWeights.x),
-						mix(lit4.x, lit4.y, sampleWeights.x),
-						sampleWeights.y);
-			}
-			vec4 lightProject = samplePos * u_lightProject;
-			vec4 t0 = texture2DProj(s_projection, lightProject.xyz );
-			vec4 t1 = texture(s_falloff, vec2(lightProject.w, 0.5) );
-			color += t0.rgb * t1.rgb * lit;
+vec3 calcWithShadows(vec3 rayStart, vec3 rayVec, float minParam, float maxParam) {
+	vec3 color = vec3(0.0);
+	for (int i = 0; i < u_sampleCount; i++) { 
+		float ratio = (i + 0.5) / u_sampleCount;
+		vec3 samplePos = rayStart + rayVec * mix(minParam, maxParam, ratio);
+		// shadow test
+		vec3 light2fragment = samplePos - u_lightOrigin;
+		float lit = 1;
+		if (u_shadows) {
+			vec4 depthSamples;
+			vec2 sampleWeights;
+			ShadowAtlasForVector(normalize(light2fragment), depthSamples, sampleWeights);
+			vec3 absL = abs(light2fragment);
+			float maxAbsL = max(absL.x, max(absL.y, absL.z));
+			vec4 lit4 = vec4(lessThan(vec4(maxAbsL), depthSamples));
+			lit = mix(mix(lit4.w, lit4.z, sampleWeights.x),
+					mix(lit4.x, lit4.y, sampleWeights.x),
+					sampleWeights.y);
+		}
+		vec4 texCoord = computeLightTex(u_lightProject, vec4(samplePos, 1));
+		vec3 texColor = projFalloffOfNormalLight(s_projection, s_falloff, texCoord);
+		color += lit * texColor;
 	}
 	return color / u_sampleCount;
 }
 
 void main() {
-	fragColor = vec4(0.3); // detect leaks
-	vec2 wrCoord = csThis.xy/csThis.w * .5 + .5;
-	float depth = texture2D(s_depth, wrCoord ).r;
+	//cast segment from viewer eye to the fragment
+	vec3 rayStart = u_viewOrigin;
+	vec3 rayVec = worldPosition.xyz - u_viewOrigin;
 	
-	vec3 fixedWorldPos = worldPosition.xyz;
-	vec3 dirToViewer = -normalize(u_viewOrigin-fixedWorldPos);
-	int entriesFound = 0;
-	vec4 exitPoint = vec4(u_viewOrigin, 1);
-	// where does the fragment-viewer ray leave the light frustum?
-	for(int i=0; i<6; i++) {  // https://stackoverflow.com/questions/23975555/how-to-do-ray-plane-intersection
-		float dotnp = dot(u_lightFrustum[i], vec4(u_viewOrigin, 1));
-		float dotnv = dot(u_lightFrustum[i].xyz, dirToViewer);
-		float rayCoord = -dotnp/dotnv;
-		if(rayCoord<=0) continue;
-		vec3 intersection = rayCoord * dirToViewer + u_viewOrigin;
-		bool insideFrustum = true;
-		for(int j=0; j<6; j++) {  
-			if(i==j) continue;
-			bool insidePlane = dot(u_lightFrustum[j], vec4(intersection, 1)) < 0;
-			insideFrustum = insideFrustum && insidePlane;
-		}
-		if(insideFrustum) {
-			if(distance(intersection, u_viewOrigin) < distance(exitPoint.xyz, u_viewOrigin)) {
-				exitPoint.xyz = intersection;
-			}
-			entriesFound++;
-		}
-	}
-	// get the nearest solid surface
-	float solidDistance = length(ViewPosFromDepth(depth));
-	if(distance(exitPoint.xyz, u_viewOrigin) >= solidDistance)
-		discard;
-	
-	// start position lies on the light frustum	
-	float fragmentDistance = distance(u_viewOrigin, fixedWorldPos);
-	vec4 startPos = vec4(fixedWorldPos, 1);
-	if(solidDistance < fragmentDistance) // frustum occluded, need to shift
-		startPos = vec4(mix(u_viewOrigin, fixedWorldPos, solidDistance / fragmentDistance), 1);
-
-	vec3 color = vec3(0);
-	switch (u_sampleCount) {
-	case 1:
-		color = vec3(calcCylinder(startPos, exitPoint));
-		break;
-	default:
-		color = calcWithShadows(startPos, exitPoint);
+	//intersect the segment with light polytope
+	float minParam = 0.0;
+	float maxParam = 1.0;
+	for (int i = 0; i < 6; i++) {
+		float dotnp = dot(u_lightFrustum[i], vec4(rayStart, 1.0));
+		float dotnv = dot(u_lightFrustum[i].xyz, rayVec);
+		float param = -dotnp / dotnv;
+		if (dotnv > 0)
+			maxParam = min(maxParam, param);
+		else
+			minParam = max(minParam, param);
 	}
 
-	fragColor.rgb = u_lightColor.rgb * vec3(color) * 5e-1;
+	//only consider visible part (not occluded by opaque geometry)
+	vec2 depthTexCoord = gl_FragCoord.xy / textureSize(s_depth, 0);
+	float depth = texture2D(s_depth, depthTexCoord).r;
+	float solidParam = depthToZ(depth) / depthToZ(gl_FragCoord.z);
+	maxParam = min(maxParam, solidParam);
+
+	if (minParam >= maxParam)
+		discard;    //no intersection
+	
+	vec3 avgColor;
+	if (u_sampleCount > 0)
+		avgColor = calcWithShadows(rayStart, rayVec, minParam, maxParam);
+	else
+		avgColor = vec3(1.0);	//full-white
+
+	float litDistance = (maxParam - minParam) * length(rayVec);
+	float dustCoeff = 1e-3; //TODO: expose it from C++
+	fragColor.rgb = u_lightColor.rgb * avgColor * litDistance * dustCoeff;
 }

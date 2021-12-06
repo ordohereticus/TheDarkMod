@@ -139,6 +139,7 @@ const idEventDef EV_SetContents( "setContents", EventArgs('f', "contents", ""), 
 const idEventDef EV_GetContents( "getContents", EventArgs(), 'f', "Returns the contents of the physics object." );
 const idEventDef EV_SetClipMask( "setClipMask", EventArgs('d', "clipMask", ""), EV_RETURNS_VOID, "Sets the clipmask of the physics object.");
 const idEventDef EV_GetClipMask( "getClipMask", EventArgs(), 'd', "Returns the clipmask of the physics object." );
+const idEventDef EV_SetSolid( "setSolid", EventArgs('d', "solidity", ""), EV_RETURNS_VOID, "Set the solidity of the entity for other entities." );
 
 const idEventDef EV_GetSize( "getSize", EventArgs(), 'v', "Gets the size of this entity's bounding box." );
 const idEventDef EV_SetSize( "setSize", EventArgs('v', "min", "minimum corner coordinates", 'v', "max", "maximum corner coordinates"), EV_RETURNS_VOID, "Sets the size of this entity's bounding box.");
@@ -554,6 +555,7 @@ ABSTRACT_DECLARATION( idClass, idEntity )
 	EVENT( EV_GetContents,			idEntity::Event_GetContents )
 	EVENT( EV_SetClipMask,			idEntity::Event_SetClipMask )
 	EVENT( EV_GetClipMask,			idEntity::Event_GetClipMask )
+	EVENT( EV_SetSolid,				idEntity::Event_SetSolid )
 
 	EVENT( EV_GetSize,				idEntity::Event_GetSize )
 	EVENT( EV_SetSize,				idEntity::Event_SetSize )
@@ -3878,6 +3880,40 @@ void idEntity::Show( void )
 	}
 }
 
+/*
+================
+idEntity::SetSolid
+================
+*/
+void idEntity::SetSolid( bool solidity ) {
+
+	idPhysics* p = GetPhysics();
+
+	// If the contents and clipmask are still uninitialised, the entity has not been hidden
+	// or had its solidity altered before. Set this to something valid (i.e. the current clipmask)
+	if ( m_preHideClipMask == -1 )
+		m_preHideClipMask = p->GetClipMask();
+	if ( m_preHideContents == -1 )
+		m_preHideContents = p->GetContents();
+
+	if( solidity == false )
+	{
+		p->SetContents( 0 );
+		p->SetClipMask( 0 );
+	
+		// SR CONTENTS_RESPONSE FIX:
+		if( m_StimResponseColl->HasResponse() )
+			p->SetContents( CONTENTS_RESPONSE );
+	}
+
+	else if( solidity == true )
+	{
+		p->SetContents( m_preHideContents );
+		p->SetClipMask( m_preHideClipMask );
+	}
+
+}
+
 float idEntity::GetLightQuotient()
 {
 	if (m_LightQuotientLastEvalTime < gameLocal.time)
@@ -4103,6 +4139,13 @@ void idEntity::UpdateModel( void ) {
 			gameRenderWorld->UpdateEntityDef( xrayEntityHandle, &xrayEntity );
 		}
 	}
+	/*if ( renderEntity.xrayIndex > 1 && m_Attachments.Num() ) {
+		for ( auto& attachment : m_Attachments ) {
+			if ( !attachment.ent.IsValid() )
+				continue;
+			attachment.ent.GetEntity()->renderEntity.xrayIndex = 4;
+		}
+	}*/
 }
 
 /*
@@ -13359,6 +13402,11 @@ void idEntity::Event_GetClipMask()
 	idThread::ReturnInt(GetPhysics()->GetClipMask());
 }
 
+void idEntity::Event_SetSolid( bool solidity )
+{
+	SetSolid( solidity );
+}
+
 void idEntity::Event_ExtinguishLights()
 {
 	// grayman #2624 - if this entity is currently being held by the
@@ -13676,5 +13724,3 @@ void idEntity::CheckCollision(idEntity* collidedWith)
 		}
 	}
 }
-
-

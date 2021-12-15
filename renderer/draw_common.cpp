@@ -1020,8 +1020,22 @@ static void RB_FogPass( bool translucent ) {
 	GLSLProgram::Deactivate();
 }
 
+idCVar r_volumetricSamples(
+	"r_volumetricSamples", "8", CVAR_ARCHIVE | CVAR_INTEGER | CVAR_RENDERER,
+	"How many samples to at every pixel of a volumetric light. "
+	"Higher values improve quality but severely degrade performance. "
+	"Zero value means using average color of projection/falloff textures and no shadows (very cheap).",
+	0, 128
+);
+idCVar r_volumetricDither(
+	"r_volumetricDither", "1", CVAR_ARCHIVE | CVAR_BOOL | CVAR_RENDERER,
+	"Use randomized sample positions across screen pixels in volumetric lights. "
+	"This greatly improves their quality, but adds high-frequency noise which may look weird."
+);
+
 void RB_VolumetricPass() {
 	auto vLight = backEnd.vLight;
+	TRACE_GL_SCOPE( "RB_VolumetricPass" );
 	
 	struct VolumetricLightUniforms : GLSLUniformGroup {
 		UNIFORM_GROUP_DEF( VolumetricLightUniforms )
@@ -1029,8 +1043,10 @@ void RB_VolumetricPass() {
 		DEFINE_UNIFORM( vec3, viewOrigin );
 		DEFINE_UNIFORM( vec3, lightOrigin );
 		DEFINE_UNIFORM( int, sampleCount );
+		DEFINE_UNIFORM( int, randomize );
 		DEFINE_UNIFORM( vec4, lightColor );
 		DEFINE_UNIFORM( sampler, depthTexture );
+		DEFINE_UNIFORM( float, dust )
 
 		//light frustum and projection
 		DEFINE_UNIFORM( sampler, lightProjectionTexture );
@@ -1100,9 +1116,11 @@ void RB_VolumetricPass() {
 	}
 
 	uniforms->lightOrigin.Set( backEnd.vLight->globalLightOrigin );
-	uniforms->sampleCount.Set( vLight->lightShader->IsVolumetric() );
+	uniforms->sampleCount.Set( r_volumetricSamples.GetInteger() );
 	uniforms->lightColor.Set( lightColor );
 	uniforms->shadows.Set( useShadows );
+	uniforms->dust.Set( vLight->volumetricDust );
+	uniforms->randomize.Set( r_volumetricDither.GetInteger() );
 
 	srfTriangles_t* frustumTris = backEnd.vLight->frustumTris;
 	// if we ran out of vertex cache memory, skip it

@@ -187,7 +187,6 @@ typedef struct renderLight_s {
 	idVec3					lightRadius;		// xyz radius for point lights
 	idVec3					lightCenter;		// offset the lighting direction for shading and
 												// shadows, relative to origin
-	float					radius;				// emitter halfsize
 
 	// frustum definition for projected lights, all relative to origin
 	// FIXME: we should probably have real plane equations here, and offer
@@ -214,6 +213,8 @@ typedef struct renderLight_s {
 	
 	int						spectrum;			//nbohr1more: #4956 spectrum entity arg
 	renderEntity_s::areaLock_t areaLock;
+
+	float					volumetricDust;		//stgatilov #5816: strength of volumetric light (in color per meter)
 
 } renderLight_t;
 

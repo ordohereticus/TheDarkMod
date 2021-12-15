@@ -32,16 +32,35 @@ uniform vec3 u_lightOrigin;
 uniform int u_sampleCount;
 uniform vec4 u_lightColor;
 uniform int u_shadows;
+uniform float u_dust;
+uniform int u_randomize;
 
 in vec4 worldPosition;
 
 out vec4 fragColor;
 
+// 8x8 Bayer matrix
+float DITHER_MATRIX[64] = float[](
+	0, 32, 8, 40, 2, 34, 10, 42,
+	48, 16, 56, 24, 50, 18, 58, 26,
+	12, 44, 4, 36, 14, 46, 6, 38,
+	60, 28, 52, 20, 62, 30, 54, 22,
+	3, 35, 11, 43, 1, 33, 9, 41,
+	51, 19, 59, 27, 49, 17, 57, 25,
+	15, 47, 7, 39, 13, 45, 5, 37,
+	63, 31, 55, 23, 61, 29, 53, 21
+);
+
 // get N samples from the fragment-view ray inside the frustum
-vec3 calcWithSampling(vec3 rayStart, vec3 rayVec, float minParam, float maxParam) {
+vec3 calcWithSampling(vec3 rayStart, vec3 rayVec, float minParam, float maxParam, int samplesNum) {
 	vec3 color = vec3(0.0);
-	for (int i = 0; i < u_sampleCount; i++) { 
-		float ratio = (i + 0.5) / u_sampleCount;
+	for (int i = 0; i < samplesNum; i++) { 
+		float frac = 0.5;
+		if (u_randomize != 0) {
+			int x = int(gl_FragCoord.x), y = int(gl_FragCoord.y);
+			frac = DITHER_MATRIX[8 * (x&7) + (y&7)] / 64.0;
+		}
+		float ratio = (i + frac) / samplesNum;
 		vec3 samplePos = rayStart + rayVec * mix(minParam, maxParam, ratio);
 		// shadow test
 		vec3 light2fragment = samplePos - u_lightOrigin;
@@ -56,7 +75,7 @@ vec3 calcWithSampling(vec3 rayStart, vec3 rayVec, float minParam, float maxParam
 		vec3 texColor = projFalloffOfNormalLight(u_lightProjectionTexture, u_lightFalloffTexture, texCoord);
 		color += lit * texColor;
 	}
-	return color / u_sampleCount;
+	return color / samplesNum;
 }
 
 vec3 calcAverage(vec3 rayStart, vec3 rayVec, float minParam, float maxParam) {
@@ -96,11 +115,10 @@ void main() {
 	
 	vec3 avgColor;
 	if (u_sampleCount > 0)
-		avgColor = calcWithSampling(rayStart, rayVec, minParam, maxParam);
+		avgColor = calcWithSampling(rayStart, rayVec, minParam, maxParam, u_sampleCount);
 	else
 		avgColor = calcAverage(rayStart, rayVec, minParam, maxParam);
 
 	float litDistance = (maxParam - minParam) * length(rayVec);
-	float dustCoeff = 1e-3; //TODO: expose it from C++
-	fragColor.rgb = u_lightColor.rgb * avgColor * litDistance * dustCoeff;
+	fragColor.rgb = u_lightColor.rgb * avgColor * litDistance * u_dust;
 }

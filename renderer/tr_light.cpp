@@ -283,9 +283,9 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	vLight = (viewLight_t *)R_ClearedFrameAlloc( sizeof( *vLight ) );
 	vLight->lightDef = light;
 	vLight->pointLight = light->parms.pointLight;
-	vLight->radius = light->parms.radius;
 	vLight->noShadows = light->parms.noShadows;
 	vLight->noSpecular = light->parms.noSpecular;
+	vLight->volumetricDust = light->parms.volumetricDust;
 
 	// the scissorRect will be expanded as the light bounds is accepted into visible portal chains
 	vLight->scissorRect.Clear();

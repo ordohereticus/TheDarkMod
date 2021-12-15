@@ -381,8 +381,6 @@ typedef struct viewLight_s {
 	bool					noShadows;
 	bool					noSpecular;
 
-	float					radius;
-
 	idVec3					globalLightOrigin;			// global light origin used by backend
 	idPlane					lightProject[4];			// light project used by backend
 	idPlane					fogPlane;					// fog plane for backend fog volume rendering
@@ -391,6 +389,7 @@ typedef struct viewLight_s {
 	const idMaterial 		*lightShader;				// light shader used by backend
 	const float				*shaderRegisters;			// shader registers used by backend
 	idImage 				*falloffImage;				// falloff image used by backend
+	float					volumetricDust;				// stgatilov #5816: strength of volumetric light
 
 	/*const */struct drawSurf_s	*globalShadows;				// shadow everything
 	/*const */struct drawSurf_s	*localInteractions;			// don't get local shadows

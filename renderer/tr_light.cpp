@@ -827,7 +827,7 @@ void R_AddLightSurfaces( void ) {
 		if ( !r_skipSuppress.GetBool() ) {
 			bool suppress = light->parms.suppressLightInViewID && light->parms.suppressLightInViewID == tr.viewDef->renderView.viewID;
 			suppress |= light->parms.allowLightInViewID && light->parms.allowLightInViewID != tr.viewDef->renderView.viewID;
-			suppress |= light->parms.suppressInSubview & ( 1 << !tr.viewDef->isSubview );
+			suppress |= (bool) ( light->parms.suppressInSubview & ( 1 << ( tr.viewDef->isSubview ? 0 : 1 ) ) );
 			if ( suppress ) {
 				*ptr = vLight->next;
 				light->viewCount = -1;
@@ -910,7 +910,7 @@ void R_AddLightSurfaces( void ) {
 
 		// fog lights will need to draw the light frustum triangles, so make sure they
 		// are in the vertex cache
-		if ( lightShader->IsFogLight() || lightShader->IsVolumetric() || r_showLights > 1 ) {
+		if ( lightShader->IsFogLight() || light->parms.volumetricDust > 0.0f || r_showLights > 1 ) {
 			if ( !vertexCache.CacheIsCurrent(vLight->frustumTris->ambientCache) ) {
 				R_CreateAmbientCache( vLight->frustumTris, false );
 			}

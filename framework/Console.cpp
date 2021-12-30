@@ -33,7 +33,8 @@ struct idConsoleLine : idStr {
 	idStr colorCodes;
 	bool wrapped = false;
 
-	idConsoleLine() {}
+	idConsoleLine() {
+	}
 	idConsoleLine( int size ) {
 		Fill( ' ', size );
 		colorCodes.Fill( 0, size );
@@ -120,6 +121,8 @@ private:
 	int					historyLine;	// the line being displayed from history list
 
 	idEditField			consoleField;
+
+	idSysMutex			printMutex;		// lock the thread-unsafe console buffer
 
 	static idCVar		con_speed;
 	static idCVar		con_notifyTime;
@@ -847,9 +850,6 @@ Linefeed
 ===============
 */
 void idConsoleLocal::Linefeed() {
-	static std::mutex mtx;           // mutex for critical section
-	std::unique_lock<std::mutex> lck( mtx, std::defer_lock );
-
 	// mark time for transparent overlay
 	if ( text.Num() > 0 ) {
 		times[( text.Num() - 1 ) % NUM_CON_TIMES] = com_frameTime;
@@ -857,9 +857,7 @@ void idConsoleLocal::Linefeed() {
 
 	x = 0;
 	idConsoleLine s( SCREEN_WIDTH / SMALLCHAR_WIDTH - 1 );
-	lck.lock();	// the `text` list is not thread safe
 	text.Append( s );
-	lck.unlock();
 
 	if ( display == text.Num() - 2 ) {
 		display++;
@@ -877,6 +875,8 @@ Handles cursor positioning, line wrapping, etc
 void idConsoleLocal::Print( const char *txt ) {
 	int		c, l;
 	int		color;
+
+	idScopedCriticalSection lock(printMutex);
 
 #ifdef ID_ALLOW_TOOLS
 	RadiantPrint( txt );

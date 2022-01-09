@@ -546,6 +546,7 @@ void idSecurityCamera::Event_AddLight( void )
 		idStr	spotlightTexture;
 		float	spotlightRange;
 		float	spotlightDiameter;
+		idStr	spotlightVolumetric;
 		idVec3	target;
 		idVec3	right;
 		idVec3	up;
@@ -555,6 +556,7 @@ void idSecurityCamera::Event_AddLight( void )
 		spawnArgs.GetString("spotlight_texture", "lights/biground1", spotlightTexture);
 		spawnArgs.GetFloat("spotlight_range", "0", spotlightRange);
 		spawnArgs.GetFloat("spotlight_diameter", "0", spotlightDiameter);
+		spawnArgs.GetString("spotlight_volumetric", "0", spotlightVolumetric);
 
 		//if neither range nor diameter were set (old entity), use scanDist for both
 		if ( spotlightRange == 0 && spotlightDiameter == 0 )
@@ -576,13 +578,8 @@ void idSecurityCamera::Event_AddLight( void )
 			}
 		}
 
-		// rotate the light origin offset around the z axis
-
-		float angle_radians = angle * (idMath::PI / 180.0f);
-
-		float a = lightOffset.x*idMath::Cos(angle_radians) - lightOffset.y*idMath::Sin(angle_radians);
-		float b = lightOffset.x*idMath::Sin(angle_radians) + lightOffset.y*idMath::Cos(angle_radians);
-		lightOffset = idVec3(a, b, lightOffset.z);
+		// rotate the light origin offset by the security camera's orientation
+		lightOffset *= GetPhysics()->GetAxis();
 
 		// set target, right, up for the spotlight,
 		// as if the light were pointing along the +x axis
@@ -597,7 +594,32 @@ void idSecurityCamera::Event_AddLight( void )
 		args.SetFloat("angle", angle);
 		args.Set("texture", spotlightTexture);
 		args.Set("_color", lightColor.ToString());
+		args.Set("volumetric_light", spotlightVolumetric.c_str());
 
+		// parse any additional spawnargs in the format "set x on spotlight". Needed because the security camera does not use the def_attach system for spotlights.
+		for (const idKeyValue* kv_set = spawnArgs.MatchPrefix("set ", NULL); kv_set != NULL; kv_set = spawnArgs.MatchPrefix("set ", kv_set))
+		{
+			// "set FOO on SPOTLIGHT"
+			idStr SpawnargName(kv_set->GetKey());
+
+			// check whether this spawnarg should apply to the spotlight
+			if (SpawnargName.Right(9) == "spotlight")
+			{
+				// "set FOO on SPOTLIGHT" => "FOO on SPOTLIGHT"
+				SpawnargName = SpawnargName.Right(kv_set->GetKey().Length() - 4);
+
+				// find position of first ' '
+				int PosSpace = SpawnargName.Find(' ', 0, -1);
+
+				// "FOO on SPOTLIGHT" => "FOO"
+				SpawnargName = SpawnargName.Left(PosSpace);
+				gameLocal.Printf("setting spawnarg %s \n", SpawnargName);
+
+				// add the spawnarg to the args list
+				args.Set(SpawnargName, kv_set->GetValue());
+			}
+		}
+		
 		light = static_cast<idLight *>(gameLocal.SpawnEntityType(idLight::Type, &args));
 		light->Bind(this, true);
 		light->SetAngles( idAngles(0, 0, 0) );
@@ -986,8 +1008,8 @@ bool idSecurityCamera::FindEnemy()
 		if( follow && enemy.GetEntity() != NULL )
 		{
 			idVec3 velocity = enemy.GetEntity()->GetPhysics()->GetLinearVelocity();
-			idBounds bounds = enemy.GetEntity()->GetPhysics()->GetBounds();
-			delta = ( enemy.GetEntity()->GetPhysics()->GetOrigin() + idVec3( 0, 0, bounds[1][2]/2 ) + velocity ) - origin;	//focus on the torso
+			idVec3 enemyPos = enemy.GetEntity()->GetPhysics()->GetAbsBounds().GetCenter();	//focus on the torso
+			delta = ( enemyPos + velocity ) - origin;
 			idAngles a = delta.ToAngles();
 			angleToEnemy = a.yaw;
 			inclineToEnemy = a.pitch;
@@ -1003,8 +1025,8 @@ bool idSecurityCamera::FindEnemy()
 
 		if ( follow )
 		{
-			idBounds bounds = bestEnemy->GetPhysics()->GetBounds();
-			delta = ( bestEnemy->GetPhysics()->GetOrigin() + idVec3( 0, 0, bounds[1][2]/2 ) ) - origin;	//focus on the torso
+			idVec3 enemyPos = bestEnemy->GetPhysics()->GetAbsBounds().GetCenter();	//focus on the torso
+			delta = enemyPos - origin;
 			idAngles a = delta.ToAngles();
 			angleToEnemy = a.yaw;
 			inclineToEnemy = a.pitch;

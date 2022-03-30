@@ -72,8 +72,9 @@ private: // methods
 
 	// finds and returns the index of best suitable stream of given type
 	// opens this stream with appropriate decoder (codec)
+	// newly allocated decoder is stored to the context pointer
 	// note: format context must be already opened
-	int OpenBestStreamOfType(AVMediaType type);
+	int OpenBestStreamOfType(AVMediaType type, AVCodecContext* &context);
 
 	// increments current lap (loop) number
 	// reopens decoder to repeat video from the beginning
@@ -155,8 +156,14 @@ private: // members
 	AVFrame *_tempVideoFrame;
 	AVFrame *_tempAudioFrame;
 
+	struct PacketNode {
+		// the actual packet in this node
+		AVPacket *_packet;
+		//packets comprise a linked list
+		PacketNode* _next;
+	};
 	// queues of packets fetched from file but not yet decoded
-	typedef idQueue(AVPacketList, next) PacketQueue;
+	typedef idQueue(PacketNode, _next) PacketQueue;
 	PacketQueue _videoPackets;
 	PacketQueue _audioPackets;
 
@@ -165,12 +172,12 @@ private: // members
 	bool FetchPacket_Locking();
 	// returns first packet from packet queue, and removes it from queue
 	// if no packets are available, fetches one from file automatically
-	AVPacketList *GetPacket(PacketQueue &queue);
-	AVPacketList *GetPacket_Locking(PacketQueue &queue);
+	PacketNode *GetPacket(PacketQueue &queue);
+	PacketNode *GetPacket_Locking(PacketQueue &queue);
 	// kill first packet in the specified queue
 	bool DropPacket(PacketQueue &queue);
 	// free specified packet node (internal)
-	void FreePacket(AVPacketList *packetNode);
+	void FreePacket(PacketNode *packetNode);
 
 	//=== decoding: general
 
@@ -180,7 +187,7 @@ private: // members
 	bool FetchFrames(AVMediaType type, double discardTime);
 	// decode exactly one packet from queue (may not produce a frame immediately)
 	// returns number of frames decoded
-	int DecodePacket(AVMediaType type, AVPacket &packet, double discardTime);
+	int DecodePacket(AVMediaType type, const AVPacket &packet, double discardTime);
 	// process a given video/audio frame just decoded
 	void ProcessDecodedFrame(AVMediaType type, AVFrame *decodedFrame, double discardTime);
 

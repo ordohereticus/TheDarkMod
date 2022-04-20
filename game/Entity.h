@@ -19,6 +19,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "OverlaySys.h"
 #include "UserManager.h"
 #include "ModelGenerator.h"
+#include "physics/Physics_Static.h"
 
 class CStimResponseCollection;
 class CStim;
@@ -250,7 +251,7 @@ public:
 	int						entityDefNumber;		// index into the entity def list
 
 	idLinkList<idEntity>	spawnNode;				// for being linked into spawnedEntities list
-	idLinkList<idEntity>	activeNode;				// for being linked into activeEntities list
+	int						activeIdx;				// for being linked into activeEntities list
 
 	idLinkList<idEntity>	snapshotNode;			// for being linked into snapshotEntities list
 	int						snapshotSequence;		// last snapshot this entity was in
@@ -703,8 +704,8 @@ public:
 	idEntity *				GetBindMaster( void ) const;
 	jointHandle_t			GetBindJoint( void ) const;
 	int						GetBindBody( void ) const;
-	idEntity *				GetTeamMaster( void ) const;
-	idEntity *				GetNextTeamEntity( void ) const;
+	idEntity *				GetTeamMaster( void ) const { return teamMaster; }
+	idEntity *				GetNextTeamEntity( void ) const { return teamChain; }
 	/**
 	* TDM: Get a list of bound team members lower down on the chain than this one
 	* Populates the list in the argument argument with entity pointers

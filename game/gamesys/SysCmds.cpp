@@ -562,8 +562,8 @@ void Cmd_ActiveEntityList_f( const idCmdArgs &args ) {
 
 	gameLocal.Printf( "%-4s  %-20s %-20s %s\n", " Num", "EntityDef", "Class", "Name" );
 	gameLocal.Printf( "--------------------------------------------------------------------\n" );
-	for ( auto iter = gameLocal.activeEntities.Iterate(); gameLocal.activeEntities.Next(iter); ) {
-		idEntity *check = gameLocal.activeEntities.Get(iter);
+	for ( auto iter = gameLocal.activeEntities.Begin(); iter; gameLocal.activeEntities.Next(iter) ) {
+		idEntity *check = iter.entity;
 		char	dormant = check->fl.isDormant ? '-' : ' ';
 		gameLocal.Printf( "%4i:%c%-20s %-20s %s\n", check->entityNumber, dormant, check->GetEntityDefName(), check->GetClassname(), check->name.c_str() );
 		count++;
@@ -3498,14 +3498,7 @@ void Cmd_LODBiasChanged_f( const idCmdArgs& args )
 	// gameLocal.Printf("LOD Bias (Object Detail) changed, checking %i entities.\n", gameLocal.num_entities);
 	// Run through all entities and Hide()/Show() them according to their MinLODBias and
 	// MaxLODBias values.
-	for (int j = 0; j < gameLocal.num_entities; j++)
-	{
-		idEntity *c_ent = gameLocal.entities[ j ];
-		if (c_ent)
-		{
-			c_ent->Event_HideByLODBias();
-		}
-	}
+	gameLocal.lodSystem.UpdateAfterLodBiasChanged();
 }
 
 #ifdef TIMING_BUILD

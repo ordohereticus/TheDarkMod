@@ -231,6 +231,8 @@ idGameLocal::idGameLocal() :
 	m_searchManager(NULL), // grayman #3857
 	activeEntities(&idEntity::activeIdx)
 {
+	entities.SetNum( MAX_GENTITIES );
+	spawnIds.SetNum( MAX_GENTITIES );
 	Clear();
 }
 
@@ -321,8 +323,8 @@ void idGameLocal::Clear( void )
 		userInfo.Clear();
 		persistentPlayerInfo.Clear();
 	memset( &usercmds, 0, sizeof( usercmds ) );
-	memset( entities, 0, sizeof( entities ) );
-	memset( spawnIds, -1, sizeof( spawnIds ) );
+	memset( entities.Ptr(), 0, entities.MemoryUsed() );
+	memset( spawnIds.Ptr(), -1, spawnIds.MemoryUsed() );
 	firstFreeIndex = 0;
 	num_entities = 0;
 	spawnedEntities.Clear();
@@ -882,11 +884,9 @@ void idGameLocal::SaveGame( idFile *f ) {
 		savegame.WriteObject( ent );
 	}
 
-	const idList<idEntity*> &activeList = activeEntities.ToList();
-	savegame.WriteInt( activeList.Num() );
-	for (int i = 0; i < activeList.Num(); i++ ) {
-		savegame.WriteObject( activeList[i] );
-	}
+	activeEntities.Save( savegame );
+
+	lodSystem.Save( savegame );
 
 	// tels: save the list of music speakers
 	savegame.WriteInt( musicSpeakers.Num() );
@@ -1443,14 +1443,15 @@ void idGameLocal::LoadMap( const char *mapName, int randseed ) {
 	numClients = 0;
 
 	// initialize all entities for this game
-	memset( entities, 0, sizeof( entities ) );
+	memset( entities.Ptr(), 0, entities.MemoryUsed() );
 	memset( &usercmds, 0, sizeof( usercmds ) );
-	memset( spawnIds, -1, sizeof( spawnIds ) );
+	memset( spawnIds.Ptr(), -1, spawnIds.MemoryUsed() );
 	spawnCount = INITIAL_SPAWN_COUNT;
 	
 	spawnedEntities.Clear();
 	activeEntities.Clear();
 	spawnedAI.Clear();
+	lodSystem.Clear();
 	numEntitiesToDeactivate = 0;
 	lastGUIEnt = NULL;
 	lastGUI = 0;
@@ -2124,16 +2125,9 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 		}
 	}
 
-	savegame.ReadInt( num );
-	idList<idEntity*> activeList;
-	for( i = 0; i < num; i++ ) {
-		savegame.ReadObject( reinterpret_cast<idClass *&>( ent ) );
-		assert( ent );
-		if ( ent ) {
-			activeList.AddGrow( ent );
-		}
-	}
-	activeEntities.FromList( activeList );
+	activeEntities.Restore( savegame );
+
+	lodSystem.Restore( savegame );
 
 	// tels: restore the list of music speakers
 	savegame.ReadInt( num );
@@ -3141,8 +3135,8 @@ void idGameLocal::SortActiveEntityList( void ) {
 
 	static idList<idEntity*> buckets[6];
 
-	for ( auto iter = activeEntities.Iterate(); activeEntities.Next(iter); ) {
-		ent = activeEntities.Get(iter);
+	for ( auto iter = activeEntities.Begin(); iter; activeEntities.Next(iter) ) {
+		ent = iter.entity;
 		master = ent->GetTeamMaster();
 
 		bool isTeamMaster = ( master && master == ent );
@@ -3316,6 +3310,9 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int timestepMs 
 			// sort the active entity list
 			SortActiveEntityList();
 
+			// check and possibly switch LOD levels 
+			lodSystem.ThinkAllLod();
+
 			timer_think.Clear();
 			timer_think.Start();
 
@@ -3323,8 +3320,8 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int timestepMs 
 				TRACE_CPU_SCOPE( "ThinkAllEntities" )
 				num = 0;
 				bool timeentities = (g_timeentities.GetFloat() > 0.0);
-				for ( auto iter = activeEntities.Iterate(); activeEntities.Next(iter); ) {
-					ent = activeEntities.Get(iter);
+				for ( auto iter = activeEntities.Begin(); iter; activeEntities.Next(iter) ) {
+					ent = iter.entity;
 					if ( inCinematic && g_cinematic.GetBool() && !ent->cinematic ) {
 						ent->GetPhysics()->UpdateTime( time );
 						// grayman #2654 - update m_lastThinkTime to keep non-cinematic AI from dying at CrashLand()
@@ -3360,8 +3357,8 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int timestepMs 
 			if ( numEntitiesToDeactivate ) {
 				TRACE_CPU_SCOPE( "DeactivateEntities" )
 				int c = 0;
-				for ( auto iter = activeEntities.Iterate(); activeEntities.Next(iter); ) {
-					ent = activeEntities.Get(iter);
+				for ( auto iter = activeEntities.Begin(); iter; activeEntities.Next(iter) ) {
+					ent = iter.entity;
 					if ( !ent->thinkFlags ) {
 						activeEntities.Remove( ent );
 						c++;
@@ -5018,8 +5015,8 @@ void idGameLocal::RunDebugInfo( void ) {
 
 	// debug tool to draw bounding boxes around active entities
 	if ( g_showActiveEntities.GetBool() ) {
-		for ( auto iter = activeEntities.Iterate(); activeEntities.Next(iter); ) {
-			ent = activeEntities.Get(iter);
+		for ( auto iter = activeEntities.Begin(); iter; activeEntities.Next(iter) ) {
+			ent = iter.entity;
 			idBounds	b = ent->GetPhysics()->GetBounds();
 			if ( b.GetVolume() <= 0 ) {
 				b[0][0] = b[0][1] = b[0][2] = -8;
@@ -6757,68 +6754,33 @@ int idGameLocal::sortSpawnPoints( const void *ptr1, const void *ptr2 ) {
 /*
 ===========
 idGameLocal::SelectInitialSpawnPoint
-spectators are spawned randomly anywhere
-in-game clients are spawned based on distance to active players (randomized on the first half)
-upon map restart, initial spawns are used (randomized ordered list of spawns flagged "initial")
-  if there are more players than initial spots, overflow to regular spawning
 ============
 */
 idEntity *idGameLocal::SelectInitialSpawnPoint( idPlayer *player ) {
-	int				i, which;
 	spawnSpot_t		spot;
 	idVec3			pos;
-	bool			alone;
 
+	// grayman #2933 - Did the player specify
+	// a starting point in the briefing?
+
+	bool foundSpot = false;
+	spot.ent = NULL;
+	if ( m_StartPosition != NULL && m_StartPosition[0] != '\0' )
 	{
-		// grayman #2933 - Did the player specify
-		// a starting point in the briefing?
-
-		bool foundSpot = false;
-		spot.ent = NULL;
-		if ( m_StartPosition != NULL && m_StartPosition[0] != '\0' )
+		spot.ent = FindEntity( m_StartPosition );
+		if ( spot.ent != NULL )
 		{
-			spot.ent = FindEntity( m_StartPosition );
-			if ( spot.ent != NULL )
-			{
-				foundSpot = true;
-			}
+			foundSpot = true;
 		}
-		
-		if ( !foundSpot )
-		{
-			spot.ent = FindEntityUsingDef( NULL, "info_player_start" );
-			if ( !spot.ent )
-			{
-				Error( "No info_player_start on map.\n" );
-			}
-		}
-		return spot.ent;
 	}
-	if ( player->spectating ) {
-		// plain random spot, don't bother
-		return spawnSpots[ random.RandomInt( spawnSpots.Num() ) ].ent;
-	} else if ( player->useInitialSpawns && currentInitialSpot < initialSpots.Num() ) {
-		return initialSpots[ currentInitialSpot++ ];
-	} else {
-		// check if we are alone in map
-		alone = true;
-		if ( alone ) {
-			// don't do distance-based
-			return spawnSpots[ random.RandomInt( spawnSpots.Num() ) ].ent;
+	
+	if ( !foundSpot )
+	{
+		spot.ent = FindEntityUsingDef( NULL, "info_player_start" );
+		if ( !spot.ent )
+		{
+			Error( "No info_player_start on map.\n" );
 		}
-
-		// find the distance to the closest active player for each spawn spot
-		for( i = 0; i < spawnSpots.Num(); i++ ) {
-			pos = spawnSpots[ i ].ent->GetPhysics()->GetOrigin();
-			spawnSpots[ i ].dist = 0x7fffffff;
-		}
-
-		// sort the list
-		qsort( ( void * )spawnSpots.Ptr(), spawnSpots.Num(), sizeof( spawnSpot_t ), ( int (*)(const void *, const void *) )sortSpawnPoints );
-
-		// choose a random one in the top half
-		which = random.RandomInt( spawnSpots.Num() / 2 );
-		spot = spawnSpots[ which ];
 	}
 	return spot.ent;
 }
@@ -7582,7 +7544,7 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 			}
 
 			// Check the interleaving timer and don't eval stim if it's not up yet
-			if ( ( gameLocal.time - stim->m_TimeInterleaveStamp ) < stim->m_TimeInterleave)
+			if ( gameLocal.time - stim->m_TimeInterleaveStamp < stim->m_TimeInterleave )
 			{
 				continue;
 			}
@@ -7607,8 +7569,15 @@ void idGameLocal::ProcessStimResponse(unsigned int ticks)
 				origin += stim->m_Velocity * (gameLocal.time - stim->m_EnabledTimeStamp)/1000;
 			}
 
-			// Save the current timestamp into the stim, so that we know when it was last fired
-			stim->m_TimeInterleaveStamp = gameLocal.time;
+			if (stim->m_TimeInterleave > 0) {
+				// Save the current timestamp into the stim, so that we know when it was last fired
+				// stgatilov: save exact offset modulo m_TimeInterleave to save even distribution
+				while ( gameLocal.time - stim->m_TimeInterleaveStamp >= stim->m_TimeInterleave)
+					stim->m_TimeInterleaveStamp += stim->m_TimeInterleave;
+			}
+			else {
+				stim->m_TimeInterleaveStamp = gameLocal.time;
+			}
 
 			// greebo: Check if the stim passes the "chance" test
 			// Do this AFTER the m_TimeInterleaveStamp has been set to avoid the stim

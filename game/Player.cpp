@@ -3409,7 +3409,7 @@ void idPlayer::UpdateConditions( void )
 	else {
 		int creepLimit = cv_pm_creepmod.GetFloat() * 127;
 		AI_CREEP = (usercmd.buttons & BUTTON_CREEP) ||
-			(idMath::Abs(usercmd.forwardmove) <= creepLimit && idMath::Abs(usercmd.rightmove <= creepLimit));
+			(idMath::Abs(usercmd.forwardmove) <= creepLimit && idMath::Abs(usercmd.rightmove) <= creepLimit);
 	}
 }
 
@@ -10213,7 +10213,7 @@ bool idPlayer::DropToHands( idEntity *ent, CInventoryItemPtr item )
 				}
 
 				// Tels: #2826: re-enable LOD again, in case the entity was in the inventory (like a shoulderable body)
-				ent->EnableLOD(true);
+				LodComponent::EnableLOD(ent, true);
 
 				return true;
 			}

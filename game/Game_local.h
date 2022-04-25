@@ -115,6 +115,7 @@ void gameError( const char *fmt, ... );
 #include "ModelGenerator.h"
 #include "LightController.h"
 #include "ModMenu.h"
+#include "LodComponent.h"
 
 #ifdef __linux__
 #include "../renderer/RenderWorld.h"
@@ -413,6 +414,7 @@ struct SuspiciousEvent
 };
 
 #include "SearchManager.h" // grayman #3857 - must follow the definition of "EventType"
+#include "Entity.h"
 #include "EntityList.h"
 
 class idDeclEntityDef;
@@ -424,16 +426,17 @@ public:
 	idDict					userInfo;	// client specific settings
 	usercmd_t				usercmds;	// client input commands
 	idDict					persistentPlayerInfo;
-	idEntity *				entities[MAX_GENTITIES];// index to entities
-	int						spawnIds[MAX_GENTITIES];// for use in idEntityPtr
+	idList<idEntity *>		entities;	// index to entities
+	idList<int>				spawnIds;	// for use in idEntityPtr
 
 	int						firstFreeIndex;			// first free index in the entities array
 	int						num_entities;			// current number <= MAX_GENTITIES
 	idHashIndex				entityHash;				// hash table to quickly find entities by name
 	idWorldspawn *			world;					// world entity
 	idLinkList<idEntity>	spawnedEntities;		// all spawned entities
-	idEntityList			activeEntities;			// all thinking entities (idEntity::thinkFlags != 0)
+	idEntityList<idEntity>	activeEntities;			// all thinking entities (idEntity::thinkFlags != 0)
 	idLinkList<idAI>		spawnedAI;				// greebo: all spawned AI
+	LodSystem				lodSystem;				// container for all entities with LOD
 	int						numEntitiesToDeactivate;// number of entities that became inactive in current frame
 	idDict					persistentLevelInfo;	// contains args that are kept around between levels
 
@@ -999,10 +1002,6 @@ private:
 
 	//int						clientPVS[ENTITY_PVS_SIZE];
 
-
-	idStaticList<spawnSpot_t, MAX_GENTITIES> spawnSpots;
-	idStaticList<idEntity *, MAX_GENTITIES> initialSpots;
-	int						currentInitialSpot;
 
 	idDict					newInfo;
 

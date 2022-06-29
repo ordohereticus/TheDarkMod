@@ -86,6 +86,8 @@ CMissionData::CMissionData() :
 	{
 		m_SpecTypeHash.Add( m_SpecTypeHash.GenerateKey( SpecTypeNames[i].c_str(), false ), i );
 	}
+
+	m_ObjNote = true;
 }
 
 CMissionData::~CMissionData( void )
@@ -127,7 +129,7 @@ void CMissionData::Save(idSaveGame* savefile) const
 	{
 		m_Objectives[i].Save(savefile);
 	}
-
+	savefile->WriteBool(m_ObjNote); // Obsttorte #5967
 	m_Stats.Save(savefile);
 
 	savefile->WriteString(m_SuccessLogicStr);
@@ -149,7 +151,7 @@ void CMissionData::Restore(idRestoreGame* savefile)
 	{
 		m_Objectives[i].Restore(savefile);
 	}
-
+	savefile->ReadBool(m_ObjNote); // Obsttorte #5967
 	// Rebuild list of clocked components now that we've loaded objectives
 	m_ClockedComponents.Clear();
 	for (int ind = 0; ind < m_Objectives.Num(); ind++)
@@ -755,11 +757,13 @@ void CMissionData::Event_ObjectiveComplete( int ind )
 	// greebo: Don't play sound or display message for invisible objectives
 	if (!obj.m_bOngoing && obj.m_bVisible)
 	{
-		player->StartSound("snd_objective_complete", SND_CHANNEL_ANY, 0, false, NULL);
+		if (m_ObjNote) // Obsttorte (#5967)
+		{
+			player->StartSound("snd_objective_complete", SND_CHANNEL_ANY, 0, false, NULL);
 
-		// greebo: Notify the player
-		player->SendHUDMessage( "#str_02453" ); // "Objective complete"
-
+			// greebo: Notify the player
+			player->SendHUDMessage("#str_02453"); // "Objective complete"
+		}
 		player->UpdateObjectivesGUI();
 	}
 }
@@ -801,9 +805,11 @@ void CMissionData::Event_ObjectiveFailed(int ind)
 	// greebo: Notify the player for visible objectives only
 	if (obj.m_bVisible)
 	{
-		player->StartSound("snd_objective_failed", SND_CHANNEL_ANY, 0, false, NULL);
-		player->SendHUDMessage( "#str_02454" ); // "Objective failed"
-
+		if (m_ObjNote) // Obsttorte (#5967)
+		{
+			player->StartSound("snd_objective_failed", SND_CHANNEL_ANY, 0, false, NULL);
+			player->SendHUDMessage("#str_02454"); // "Objective failed"
+		}
 		player->UpdateObjectivesGUI();
 	}
 
@@ -833,12 +839,13 @@ void CMissionData::Event_NewObjective()
 
 	idPlayer* player = gameLocal.GetLocalPlayer();
 	if (player == NULL) return;
+	if (m_ObjNote) // Obsttorte (#5967)
+	{
+		player->StartSound("snd_new_objective", SND_CHANNEL_ANY, 0, false, NULL);
 
-	player->StartSound("snd_new_objective", SND_CHANNEL_ANY, 0, false, NULL);
-
-	// greebo: notify the player
-	player->SendHUDMessage( "#str_02455" ); // "New Objective"
-
+		// greebo: notify the player
+		player->SendHUDMessage("#str_02455"); // "New Objective"
+	}
 	player->UpdateObjectivesGUI();
 }
 
@@ -918,12 +925,24 @@ void CMissionData::Event_MissionEnd()
 	// grayman #4002 - make a final pass through the queued alert events for
 	// each AI to bring stealth score up to date
 
+	// Obsttorte #5678 - calculate the total amount of pickables for the end mission screen
+	m_Stats.PocketsTotal = m_Stats.PocketsPicked;
+
 	for ( int i = 0 ; i < gameLocal.num_entities ; i++ )
 	{
 		idEntity* ent = gameLocal.entities[i];
 		if ( !ent )
 		{
 			continue;
+		}
+		// Obsttorte (#5678) 
+		if (ent->CanBePickedUp())
+		{
+			idEntity* master = ent->GetBindMaster();
+			if (master && master->health > 0)
+			{
+				m_Stats.PocketsTotal++;
+			}
 		}
 		if ( ent->IsType(idAI::Type) )
 		{
@@ -2601,7 +2620,7 @@ void CMissionData::UpdateStatisticsGUI(idUserInterface* gui, const idStr& listDe
 	//gui->SetStateString(prefix + idStr(index++), " ");	// Empty line // grayman #4363 - remove empty line
 
 	key = common->Translate( "#str_02212" );	// Pockets Picked 
-	value = idStr(GetPocketsPicked());
+	value = idStr(GetPocketsPicked()) + common->Translate("#str_02214") + getPocketsTotal();
 	gui->SetStateString(prefix + idStr(index++), key + divider + value);
 
 	key = common->Translate( "#str_02213" );	// Loot Acquired
@@ -2831,6 +2850,10 @@ int CMissionData::getTotalSaves()
 	return m_Stats.totalSaveCount;
 }
 
+int CMissionData::getPocketsTotal()
+{
+	return m_Stats.PocketsTotal;
+}
 // Dragofer
 
 void CMissionData::SetSecretsFound( float secrets )

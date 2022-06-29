@@ -133,6 +133,7 @@ static const int DSF_VIEW_INSIDE_SHADOW	= 1;
 static const int DSF_SOFT_PARTICLE = 2; // #3878
 static const int DSF_SHADOW_MAP_IGNORE = 4; // #4641
 static const int DSF_SHADOW_MAP_ONLY = 8; // #4641
+static const int DSF_SORT_DEPTH = 16;
 
 struct viewLight_s;
 
@@ -719,6 +720,9 @@ typedef struct {
 	int		c_drawRefIndexes;
 	int		c_drawRefVertexes;
 
+	int		c_copyFrameBuffer;
+	int		c_copyDepthBuffer;
+
 	int		c_shadowElements;
 	int		c_shadowIndexes;
 	int		c_shadowVertexes;
@@ -757,18 +761,12 @@ typedef struct {
 	// with post processing to get the desired total light level.
 	// A high dynamic range card will have this set to 1.0.
 
-	bool				currentRenderCopied;	// true if any material has already referenced _currentRender
-	bool				afterFogRendered;		// added post process pass.
-
 	// Test if lightDepthBounds should be enabled or not
 	/*bool				useLightDepthBounds;
 	bool				lightDepthBoundsDisabled;*/
 
 	// our OpenGL state deltas
 	glstate_t			glState;
-
-	int					c_copyFrameBuffer;
-	int					c_copyDepthBuffer;
 } backEndState_t;
 
 const int MAX_GUI_SURFACES	= 1024;		// default size of the drawSurfs list for guis, will
@@ -1071,7 +1069,7 @@ extern idCVar r_debugPolygonFilled;
 
 extern idCVar r_materialOverride;		// override all materials
 
-extern idCVar r_debugRenderToTexture;
+extern idCVar r_showRenderToTexture;
 
 // rebb: dedicated ambient
 extern idCVar r_dedicatedAmbient;

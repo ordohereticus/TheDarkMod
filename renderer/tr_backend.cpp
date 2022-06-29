@@ -511,6 +511,9 @@ static void	RB_SetBuffer( const void *data ) {
 
 	backEnd.frameCount = cmd->frameCount;
 
+	qglDrawBuffer( r_frontBuffer.GetBool() ? GL_FRONT : GL_BACK );
+	qglReadBuffer( r_frontBuffer.GetBool() ? GL_FRONT : GL_BACK );
+
 	// clear screen for debugging
 	// automatically enable this with several other debug tools
 	// that might leave unrendered portions of the screen
@@ -657,12 +660,12 @@ struct TonemapUniforms : GLSLUniformGroup {
 	DEFINE_UNIFORM(float, sharpness)
 };
 
-void RB_Bloom( bloomCommand_t *cmd ) {
+bool RB_Bloom( bloomCommand_t *cmd ) {
 	if ( !r_bloom.GetBool() ) {
-		return;
+		return false;
 	}
 	if ( RB_CheckTools( globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight ) ) {
-		return;
+		return false;
 	}
 
 	TRACE_GL_SCOPE("Postprocess")
@@ -670,6 +673,7 @@ void RB_Bloom( bloomCommand_t *cmd ) {
 	bloom->ComputeBloomFromRenderImage();
 	frameBuffers->LeavePrimary( false );
 	bloom->ApplyBloom();
+	return true;
 }
 
 idCVar r_postprocess_sharpen( "r_postprocess_sharpen", "1", CVAR_RENDERER|CVAR_BOOL|CVAR_ARCHIVE, "Use contrast-adaptive sharpening in tonemapping" );
@@ -787,15 +791,18 @@ RB_CopyRender
 Copy part of the current framebuffer to an image
 =============
 */
-void RB_CopyRender( const void *data ) {
+bool RB_CopyRender( const void *data ) {
 	if ( r_skipCopyTexture.GetBool() ) {
-		return;
+		return false;
 	}
 	const copyRenderCommand_t &cmd = *( copyRenderCommand_t * )data;
 
 	RB_LogComment( "***************** RB_CopyRender *****************\n" );
 
+	if ( cmd.imageWidth * cmd.imageHeight == 0 )
+		return false;
 	frameBuffers->CopyRender( cmd );
+	return true;
 }
 
 /*
@@ -850,9 +857,6 @@ void RB_ExecuteBackEndCommands( const emptyCommand_t *cmds ) {
 			} else {
 				c_draw2d++;
 			}
-			if ( r_frontBuffer.GetBool() ) {					// debug: put a breakpoint to see a per view render
-				qglFinish();
-			}
 			break;
 		}
 		case RC_DRAW_LIGHTGEM:
@@ -864,11 +868,12 @@ void RB_ExecuteBackEndCommands( const emptyCommand_t *cmds ) {
 			c_setBuffers++;
 			break;
 		case RC_BLOOM:
-			RB_Bloom( (bloomCommand_t*)cmds );
-			FB_DebugShowContents();
-			c_drawBloom++;
-			frameBuffers->LeavePrimary();
-			fboOff = true;
+			if ( RB_Bloom( (bloomCommand_t*)cmds ) ) {
+				c_drawBloom++;
+				FB_DebugShowContents();
+				frameBuffers->LeavePrimary();
+				fboOff = true;
+			}
 			break;
 		case RC_COPY_RENDER:
 			RB_CopyRender( cmds );
@@ -899,10 +904,8 @@ void RB_ExecuteBackEndCommands( const emptyCommand_t *cmds ) {
 	backEnd.pc.msec += backEnd.pc.msecLast;
 
 	// revelator: added depthcopy to counters
-	if ( r_debugRenderToTexture.GetInteger() ) {
-		common->Printf( "3d: %i, 2d: %i, SetBuf: %i, SwpBuf: %i, drwBloom: %i, CpyRenders: %i, CpyFrameBuf: %i, CpyDepthBuf: %i\n", c_draw3d, c_draw2d, c_setBuffers, c_swapBuffers, c_drawBloom, c_copyRenders, backEnd.c_copyFrameBuffer, backEnd.c_copyDepthBuffer );
-		backEnd.c_copyFrameBuffer = 0;
-		backEnd.c_copyDepthBuffer = 0;
+	if ( r_showRenderToTexture.GetBool() ) {
+		common->Printf( "3d: %i, 2d: %i, SetBuf: %i, SwpBuf: %i, drwBloom: %i, CpyRenders: %i, CpyFrameBuf: %i, CpyDepthBuf: %i\n", c_draw3d, c_draw2d, c_setBuffers, c_swapBuffers, c_drawBloom, c_copyRenders, backEnd.pc.c_copyFrameBuffer, backEnd.pc.c_copyDepthBuffer );
 	}
 
 	if ( image_showBackgroundLoads && backEnd.pc.textureLoads ) {

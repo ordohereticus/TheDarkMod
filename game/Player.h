@@ -392,6 +392,10 @@ public:
 	// or toggle crouch is active
 	bool					m_CrouchIntent;
 
+	// Daft Mugi: For new toggle crouch, this is set to true when the
+	// player has pressed toggle crouch while on a rope or ladder/vine.
+	bool					m_CrouchToggleBypassed;
+
 	// STiFU: FrobHelper alpha calculation
 	CFrobHelper				m_FrobHelper;
 
@@ -856,6 +860,10 @@ public:
 	void					PerformFrobKeyRepeat(int holdTime);
 	// Gets called when the player releases the frob button
 	void					PerformFrobKeyRelease(int holdTime);
+
+	// Obstorte: #5984 (multilooting)
+	bool					multiloot;
+	int						multiloot_lastfrob;
 
 	// angua: Set ideal crouch state
 	void					EvaluateCrouch();
@@ -1379,6 +1387,9 @@ private:
 	void					Event_SetObjectiveOngoing( int ObjIndex, bool bVal );
 	void					Event_SetObjectiveEnabling( int ObjIndex, const char *strIn );
 	void					Event_SetObjectiveText( int ObjIndex, const char *descr );
+
+	// Obsttorte: (#5967) Enable/Disable Objective State Notifications
+	void					Event_SetObjectiveNotification(bool ObjNote);
 
 	/**
 	* greebo: This scriptevent routes the call to the member method "GiveHealthPool".

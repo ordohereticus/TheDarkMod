@@ -220,7 +220,7 @@ idCVar r_debugPolygonFilled( "r_debugPolygonFilled", "1", CVAR_RENDERER | CVAR_B
 
 idCVar r_materialOverride( "r_materialOverride", "", CVAR_RENDERER, "overrides all materials", idCmdSystem::ArgCompletion_Decl<DECL_MATERIAL> );
 
-idCVar r_debugRenderToTexture( "r_debugRenderToTexture", "0", CVAR_RENDERER | CVAR_INTEGER, "" );
+idCVar r_showRenderToTexture( "r_showRenderToTexture", "0", CVAR_RENDERER | CVAR_INTEGER, "" );
 
 // greebo: screenshot format CVAR, by default convert the generated TGA to JPG
 idCVar r_screenshot_format(	"r_screenshot_format", "jpg",   CVAR_RENDERER | CVAR_ARCHIVE, "Image format used to store ingame screenshots: png/tga/jpg/bmp." );
@@ -977,12 +977,18 @@ void Screenshot_ChangeFilename( idStr& filename, const char *extension ) {
 		mapname = "noFm";
 	}
 
-	// uhm any particular reason this was encapsulated in brackets ?
 	time_t tt;
 	time( &tt );
 	struct tm * ltime = localtime( &tt );
-	strftime( thetime, sizeof( thetime ), "_%Y-%m-%d_%H.%M.%S.", ltime );
-	const idStr fileOnly = mapname + thetime + extension;
+	strftime( thetime, sizeof( thetime ), "%Y-%m-%d %H-%M-%S", ltime );
+	
+	// Obsttorte: Add players view location to screenshot filename (#5819)
+	idVec3 origin;
+	idMat3 axis;
+	gameLocal.GetViewPos_Cmd(origin, axis);
+	idStr playerViewOriginStr(origin.ToString());
+
+	idStr fileOnly = mapname + " (" + thetime + ") (" + playerViewOriginStr + ")." + extension;
 
 	filename = "screenshots/";
 	filename.AppendPath( fileOnly );

@@ -225,6 +225,9 @@ const idEventDef EV_Player_SetObjectiveEnabling( "setObjectiveEnabling",
 const idEventDef EV_Player_SetObjectiveText( "setObjectiveText", EventArgs('d', "ObjNum", "Starts counting at 1", 's', "newText", ""), EV_RETURNS_VOID, 
 		"Modify the displayed text for an objective. Can also be a string template like #str_20000");
 
+// Obsttorte (#5967)
+const idEventDef EV_Player_SetObjectiveNotification("setObjectiveNotification", EventArgs('d', "ObjNote", "Turn notifications on/off"), EV_RETURNS_VOID,
+		"Turns the notifications (sound ++ text) for objectives on/off.");
 
 // greebo: This allows scripts to set the "healthpool" for gradual healing
 const idEventDef EV_Player_GiveHealthPool("giveHealthPool", EventArgs('f', "amount", ""), EV_RETURNS_VOID, 
@@ -421,6 +424,7 @@ CLASS_DECLARATION( idActor, idPlayer )
 	EVENT( EV_Player_SetObjectiveOngoing,	idPlayer::Event_SetObjectiveOngoing )
 	EVENT( EV_Player_SetObjectiveEnabling,	idPlayer::Event_SetObjectiveEnabling )
 	EVENT( EV_Player_SetObjectiveText,		idPlayer::Event_SetObjectiveText )
+	EVENT( EV_Player_SetObjectiveNotification, idPlayer::Event_SetObjectiveNotification)
 
 	EVENT( EV_Player_GiveHealthPool,		idPlayer::Event_GiveHealthPool )
 	EVENT( EV_Player_WasDamaged,			idPlayer::Event_WasDamaged )
@@ -692,6 +696,11 @@ idPlayer::idPlayer() :
 	m_FrobEntity = NULL;
 	m_FrobJoint = INVALID_JOINT;
 	m_FrobID = 0;
+
+	// Obsttorte: #5984
+	multiloot = false;
+	multiloot_lastfrob = 0;
+
 	// greebo: Initialise the frob trace contact material to avoid 
 	// crashing during map save when nothing has been frobbed yet
 	memset(&m_FrobTrace, 0, sizeof(trace_t));
@@ -702,6 +711,7 @@ idPlayer::idPlayer() :
 
 	m_IdealCrouchState		= false;
 	m_CrouchIntent			= false;
+	m_CrouchToggleBypassed	= false;
 
 	m_LeanButtonTimeStamp	= 0;
 	m_InventoryOverlay		= -1;
@@ -2397,6 +2407,11 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadTrace(m_FrobTrace);
 	savefile->ReadBool(m_bFrobOnlyUsedByInv);
 
+	// Obsttorte: #5984
+	// those values don't get saved, but instead reset upon load
+	multiloot = false;
+	multiloot_lastfrob = 0;
+
 	savefile->ReadInt( buttonMask );
 	savefile->ReadInt( oldButtons );
 	savefile->ReadInt( oldFlags );
@@ -2652,6 +2667,8 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadBool( m_IdealCrouchState );
 	savefile->ReadBool( m_CrouchIntent );
+	// stgatilov: no need to save it, but better reset it on load
+	m_CrouchToggleBypassed = false;
 
 	savefile->ReadInt(m_InventoryOverlay);
 
@@ -5606,7 +5623,25 @@ void idPlayer::PerformImpulse( int impulse ) {
 
 		case IMPULSE_CROUCH:		// Crouch
 		{
-			if (!cv_tdm_crouch_toggle.GetBool())
+			if (cv_tdm_crouch_toggle.GetBool())
+			{
+				if (physicsObj.OnRope() || physicsObj.OnLadder())
+				{
+					// Climbing; use regular crouch behavior
+					m_CrouchToggleBypassed = true;
+					m_CrouchIntent = true;
+				}
+				else
+				{
+					// Not climbing; toggle crouch
+					if (entityNumber == gameLocal.localClientNum)
+					{
+						m_CrouchToggleBypassed = false;
+						m_CrouchIntent = !m_CrouchIntent;
+					}
+				}
+			}		
+			else
 			{
 				m_CrouchIntent = true;
 			}
@@ -5933,13 +5968,15 @@ void idPlayer::PerformKeyRelease(int impulse, int holdTime)
 	switch (impulse)
 	{
 		case IMPULSE_CROUCH:		// TDM crouch
+
 			if (cv_tdm_crouch_toggle.GetBool())
 			{
-				if ( entityNumber == gameLocal.localClientNum )
+				if (physicsObj.OnRope() || physicsObj.OnLadder() || m_CrouchToggleBypassed)
 				{
-					m_CrouchIntent = !m_CrouchIntent;
+					// Climbing or initiated crouch while climbing; use regular crouch behavior
+					m_CrouchIntent = false;
 				}
-			}		
+			}
 			else
 			{
 				m_CrouchIntent = false;
@@ -10617,6 +10654,12 @@ void idPlayer::Event_SetObjectiveText( int ObjIndex, const char *descr )
 	gameLocal.m_MissionData->SetObjectiveText(ObjIndex - 1, descr);
 }
 
+// Obsttorte (#5967)
+void idPlayer::Event_SetObjectiveNotification(bool ObjNote)
+{
+	gameLocal.m_MissionData->m_ObjNote = ObjNote;
+}
+
 void idPlayer::Event_GiveHealthPool( float amount ) {
 	// Pass the call to the proper member method
 	GiveHealthPool(amount);
@@ -11321,7 +11364,18 @@ void idPlayer::PerformFrob(EImpulseState impulseState, idEntity* target, bool al
 	{
 		return;
 	}
-
+	// Obsttorte: #5984) multilooting
+	// return, if not enough time has passed since the last pickup
+	if (multiloot && ( gameLocal.time - multiloot_lastfrob < cv_multiloot_min_interval.GetFloat() ) )
+	{
+		return;
+	}
+	// disable multiloot and return if too much time has passed since last pickup
+	if (multiloot && ( gameLocal.time - multiloot_lastfrob > cv_multiloot_max_interval.GetFloat() ) )
+	{
+		multiloot = false;
+		return;
+	}
 	// if we only allow "simple" frob actions and this isn't one, play forbidden sound
 	if ( (GetImmobilization() & EIM_FROB_COMPLEX) && !target->m_bFrobSimple )
 	{
@@ -11334,7 +11388,7 @@ void idPlayer::PerformFrob(EImpulseState impulseState, idEntity* target, bool al
 	// Retrieve the entity before trying to add it to the inventory, the pointer
 	// might be cleared after calling AddToInventory().
 	idEntity* highlightedEntity = m_FrobEntity.GetEntity();
-
+	
 	if (impulseState == EPressed)
 	{
 		// Fire the STIM_FROB response on key down (if defined) on this entity
@@ -11373,20 +11427,28 @@ void idPlayer::PerformFrob(EImpulseState impulseState, idEntity* target, bool al
 	// Inventory item could not be used with the highlighted entity, proceed with ordinary frob action
 
 	// These actions are only applicable for EPressed buttonstate
-	if (impulseState == EPressed)
+	if (impulseState == EPressed || multiloot)
 	{
+		
+		// First we have to check whether that entity is an inventory 
+		// item. In that case, we have to add it to the inventory and
+		// hide the entity.
+
+		// Obsttorte: don't do anything if we are multilooting and this is no inventory item
+		if (multiloot && target->spawnArgs.GetString("inv_name", "") == "")
+		{
+			return;
+		}
+
 		// Trigger the frob action script on key down
 		target->FrobAction(true);
+		
+		CInventoryItemPtr addedItem = AddToInventory(target);
 
 		DM_LOG(LC_FROBBING, LT_DEBUG)LOGSTRING("USE: frob target: %s \r", target->name.c_str());
 
 		// note which target we started pressing frob on
 		m_FrobPressedTarget = target;
-
-		// First we have to check whether that entity is an inventory 
-		// item. In that case, we have to add it to the inventory and
-		// hide the entity.
-		CInventoryItemPtr addedItem = AddToInventory(target);
 
 		// Check if the frobbed entity is the one currently highlighted by the player
 		if ( (addedItem != NULL) && (highlightedEntity == target) ) 
@@ -11394,31 +11456,37 @@ void idPlayer::PerformFrob(EImpulseState impulseState, idEntity* target, bool al
 			// Item has been added to the inventory, clear the entity pointer
 			m_FrobEntity = NULL;
 
+			// Obsttorte: start multiloot
+			multiloot = true;
+			multiloot_lastfrob = gameLocal.time; 
+
 			// grayman #3011 - is anything sitting on this inventory item?
 			target->ActivateContacts();
 		}
-
-		// Grab it if it's a grabable class
-		if (target->IsType(idMoveable::Type) || target->IsType(idAFEntity_Base::Type) || 
-			target->IsType(idMoveableItem::Type) || target->IsType(idAFAttachment::Type))
+		if (impulseState == EPressed)
 		{
-			// allow override of default grabbing behavior
-			if ( !target->spawnArgs.GetBool("grabable","1") )
+			// Grab it if it's a grabable class
+			if (target->IsType(idMoveable::Type) || target->IsType(idAFEntity_Base::Type) ||
+				target->IsType(idMoveableItem::Type) || target->IsType(idAFAttachment::Type))
 			{
-				return;
-			}
-
-			// Do not pick up live, conscious AI
-			if ( target->IsType( idAI::Type ) )
-			{
-				idAI *AItarget = static_cast<idAI *>(target);
-				if ( (AItarget->health > 0) && !AItarget->IsKnockedOut() )
+				// allow override of default grabbing behavior
+				if (!target->spawnArgs.GetBool("grabable", "1"))
 				{
 					return;
 				}
-			}
 
-			gameLocal.m_Grabber->Update( this, false, true ); // preservePosition = true #4149
+				// Do not pick up live, conscious AI
+				if (target->IsType(idAI::Type))
+				{
+					idAI* AItarget = static_cast<idAI*>(target);
+					if ((AItarget->health > 0) && !AItarget->IsKnockedOut())
+					{
+						return;
+					}
+				}
+
+				gameLocal.m_Grabber->Update(this, false, true); // preservePosition = true #4149
+			}
 		}
 	}
 }
@@ -11458,17 +11526,20 @@ void idPlayer::PerformFrobKeyRepeat(int holdTime)
 	idEntity* frob = m_FrobEntity.GetEntity();
 
 	// use the original target until frob is released and pressed again
-	if ( m_FrobPressedTarget.IsValid() && (m_FrobPressedTarget.GetEntity() != NULL ))
+	
+	if (m_FrobPressedTarget.IsValid() && (m_FrobPressedTarget.GetEntity() != NULL))
 	{
 		m_FrobPressedTarget.GetEntity()->FrobHeld( true, false, holdTime );
 	}
-
+	
 	// Relay the function to the specialised method
 	PerformFrob(ERepeat, frob, true);
 }
 
 void idPlayer::PerformFrobKeyRelease(int holdTime)
 {
+	// Obsttorte: multilooting
+	multiloot = false;
 	// Ignore frobs if player-frobbing is immobilized.
 	if ( GetImmobilization() & EIM_FROB )
 	{

@@ -340,6 +340,9 @@ const idEventDef EV_CreateOverlay( "createOverlay", EventArgs('s', "guiFile", ""
 const idEventDef EV_DestroyOverlay( "destroyOverlay", EventArgs('d', "handle", ""), EV_RETURNS_VOID, "Destroys a GUI overlay. (must be used on the player)");
 const idEventDef EV_LoadExternalData( "loadExternalData", EventArgs('s', "declFile", "", 's', "prefix", ""), 'd', "Load an external xdata declaration." );
 
+// Obsttorte: #5976
+const idEventDef EV_addFrobPeer("addFrobPeer", EventArgs('e', "peer", ""), EV_RETURNS_VOID, "Adds the passed entity as frob peer.");
+const idEventDef EV_removeFrobPeer("removeFrobPeer", EventArgs('e', "peer", ""), EV_RETURNS_VOID, "Removes the passed entity as frob peer.");
 
 //===============================================================
 //                   TDM Inventory
@@ -626,6 +629,10 @@ ABSTRACT_DECLARATION( idClass, idEntity )
 	EVENT( EV_DestroyOverlay,		idEntity::Event_DestroyOverlay )
 
 	EVENT( EV_LoadExternalData,		idEntity::Event_LoadExternalData )
+
+	// Obsttorte #5976 
+	EVENT( EV_addFrobPeer,			idEntity::Event_AddFrobPeer ) 
+	EVENT( EV_removeFrobPeer,		idEntity::Event_RemoveFrobPeer )
 
 	EVENT( EV_GetLootAmount,		idEntity::Event_GetLootAmount )
 	EVENT( EV_ChangeLootAmount,		idEntity::Event_ChangeLootAmount )
@@ -4300,7 +4307,7 @@ idEntity::PostBind
 void idEntity::PostBind( void )
 {
 	// #3704: Destroy our frob box if bound to an animated entity.
-	if ( bindMaster->IsType(idAnimatedEntity::Type) && m_FrobBox != NULL )
+	if ( bindMaster && bindMaster->IsType(idAnimatedEntity::Type) && m_FrobBox != NULL )
 	{
 		delete m_FrobBox;
 		m_FrobBox = NULL;
@@ -4400,6 +4407,8 @@ void idEntity::FinishBind( idEntity *newMaster, const char *jointName ) // graym
 
 	// set the master on the physics object
 	physics->SetMaster( bindMaster, fl.bindOrientated );
+
+	if (!bindMaster) return; // can be null if self or loop bind
 
 	// if our bindMaster is enabled during a cinematic, we must be, too
 	cinematic = bindMaster->cinematic;
@@ -11640,7 +11649,21 @@ idEntity* idEntity::GetFrobMaster()
 
 	return master;
 }
-
+// Obsttorte: #5976
+void idEntity::Event_AddFrobPeer(idEntity* peer)
+{
+	AddFrobPeer(peer);
+	if (m_bFrobbed) // update the frob state if necessary
+	{
+		peer->SetFrobbed(true);
+	}
+}
+void idEntity::Event_RemoveFrobPeer(idEntity* peer)
+{
+	RemoveFrobPeer(peer);
+	// don't stay frob-hilighted after peer has been removed
+	peer->SetFrobbed(false);
+}
 void idEntity::Event_DestroyOverlay(int handle)
 {
 	DestroyOverlay(handle);

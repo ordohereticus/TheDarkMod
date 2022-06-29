@@ -2127,7 +2127,7 @@ void idPhysics_Player::CheckDuck( void ) {
 		// stand up when climbing a ladder or rope
 		if (idealCrouchState == true && !m_bOnClimb && !m_bOnRope)
 		{
-			if (waterLevel <= WATERLEVEL_WAIST)
+			if (waterLevel >= WATERLEVEL_WAIST)
 			{
 				// greebo: We're waist-deep in water, trace down a few units to see if we're standing on ground
 				trace_t	trace;
@@ -2198,10 +2198,13 @@ void idPhysics_Player::CheckDuck( void ) {
 			}
 		}
 
-		// TODO_CROUCH: don't use crouch speed while climbing
 		if ( current.movementFlags & PMF_DUCKED ) 
 		{
-			playerSpeed = crouchSpeed;
+			// #5961 - Don't use crouch speed while climbing
+			if (!(OnRope() || OnLadder()))
+			{
+				playerSpeed = crouchSpeed;
+			}
 			maxZ = pm_crouchheight.GetFloat();
 		}
 		else 

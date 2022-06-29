@@ -475,9 +475,17 @@ public:
 	// Obsttorte: Increment save game counter for end mission screen
 	int getTotalSaves();
 
+	// Obsttorte (#5678)
+	int getPocketsTotal();
+
 	// Dragofer: set stats for secrets
 	void SetSecretsFound( float secrets );
 	void SetSecretsTotal( float secrets );
+
+	/**
+	* Obsttorte: (#5967) Alter notifications on objective state change
+	*/
+	bool m_ObjNote;
 
 protected:
 	/**

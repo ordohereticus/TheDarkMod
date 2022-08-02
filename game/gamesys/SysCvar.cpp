@@ -93,7 +93,15 @@ idCVar cv_ai_search_type (			"tdm_ai_search_type",		"4",			CVAR_GAME | CVAR_ARCH
 idCVar cv_ai_opt_disable (			"tdm_ai_opt_disable",		"1",			CVAR_GAME | CVAR_BOOL, "If true (nonzero), AIs not in the Potentially Visible Set will be completely disabled if they have neverdormant set to 0.");
 idCVar cv_ai_opt_noanims (			"tdm_ai_opt_noanims",		"0",			CVAR_GAME | CVAR_BOOL, "If true (nonzero), AIs will not animate.");
 idCVar cv_ai_opt_novisualscan (		"tdm_ai_opt_novisualscan",	"0",			CVAR_GAME | CVAR_BOOL, "If true (nonzero), AIs not in the Potentially Visible Set will not look for enemies, not even enemy AIs.");
-idCVar cv_ai_opt_forceopt (			"tdm_ai_opt_forceopt",		"0",			CVAR_GAME | CVAR_BOOL, "If true (nonzero), AIs will always be treated as being outside the PVS for the purposes of the other tdm_ai_opt_* spawnargs." );
+idCVar cv_ai_opt_forcedormant (	
+	"tdm_ai_opt_forcedormant",	"0", CVAR_GAME | CVAR_INTEGER,
+	"If 1, AIs will always be dormant.\n"
+	"If -1, AIs will never be dormant."
+);
+idCVar cv_ai_opt_forceopt (	
+	"tdm_ai_opt_forceopt",	"0", CVAR_GAME | CVAR_BOOL,
+	"If true, AIs will do interleaved thinking as if player is infinitely far away.\n"
+);
 idCVar cv_ai_opt_nothink (			"tdm_ai_opt_nothink",		"0",			CVAR_GAME | CVAR_BOOL, "If true (nonzero), AI will not perform their regular thinking routine (including Mind)." );
 idCVar cv_ai_opt_interleavethinkmindist (		"tdm_ai_opt_interleavethinkmindist",		"0",	CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "If true (nonzero), the AI will start interleaved thinking if the distance to the player is greater than the set value." );
 idCVar cv_ai_opt_interleavethinkmaxdist (		"tdm_ai_opt_interleavethinkmaxdist",		"0",	CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "If true (nonzero), this is the distance where interleave frame will reach its maximum value." );
@@ -219,6 +227,7 @@ idCVar cv_pm_mantle_fastMediumObstaclesCrouched("pm_mantle_fastMediumObstaclesCr
 idCVar cv_pm_mantle_pullFast_msecs("pm_mantle_pullFast_msecs", "450.0", CVAR_GAME | CVAR_INTEGER |CVAR_ARCHIVE, "The duration it takes for a fast pull.", 0, 10000);
 idCVar cv_pm_mantle_fallingFast_speedthreshold("pm_mantle_fallingFast_speedthreshold", "360.0", CVAR_GAME | CVAR_FLOAT, "If falling faster than this threshold, no fast mantles will be performed.", 0.0f, 100000.0f);
 idCVar cv_pm_mantle_cancel_speed("pm_mantle_cancel_speed", "150.0", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "The cancel mantling animation is performed at a certain speed.", 1.0f, 10000.0f);
+idCVar cv_pm_mantle_tilt_mod("pm_mantle_tilt_mod", "1.0", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "The multiplier applied to the tilt view angle during a mantle", 0.0f, 1.0f);
 
 idCVar cv_pm_ladderSlide_speedLimit("pm_ladderSlide_speedLimit", "400.0", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "Speed when sliding down a ladder is limited to this amount.", 0, 100000.0f);
 

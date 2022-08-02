@@ -27,6 +27,8 @@ public:
 	idWinVar();
 	virtual ~idWinVar();
 
+	virtual const char *GetTypeName() const = 0;
+
 	void SetGuiInfo(idDict *gd, const char *_name);
 	const char *GetName() const { 
 		if (name) {
@@ -56,7 +58,6 @@ public:
 	bool NeedsUpdate() { return (guiDict != NULL); }
 
 	virtual void Init(const char *_name, idWindow* win) = 0;
-	virtual void Set(const char *val) = 0;
 	virtual void Update() = 0;
 	virtual const char *c_str() const = 0;
 	virtual size_t Size() {	size_t sz = (name) ? strlen(name) : 0; return sz + sizeof(*this); }
@@ -66,14 +67,19 @@ public:
 
 	virtual float x( void ) const = 0;
 
+	bool Set(const char *val) { return _Set(val, false); }
+	bool TestSet(const char *val) const { return const_cast<idWinVar*>(this)->_Set(val, true); }
+
 	void SetEval(bool b) {
 		eval = b;
 	}
 	bool GetEval() {
 		return eval;
 	}
-	
+
 protected:
+	virtual bool _Set(const char *val, bool dryRun) = 0;
+
 	idDict *guiDict;
 	char *name;
 	bool eval;
@@ -83,6 +89,7 @@ class idWinBool : public idWinVar {
 public:
 	idWinBool() : idWinVar() {};
 	~idWinBool() {};
+	virtual const char *GetTypeName() const override { return "bool"; }
 	virtual void Init(const char *_name, idWindow *win) { idWinVar::Init(_name, win);
 		if (guiDict) {
 			data = guiDict->GetBool(GetName());
@@ -104,14 +111,19 @@ public:
 
 	operator bool() const { return data; }
 
-	virtual void Set(const char *val) { 
+	virtual bool _Set(const char *val, bool dryRun) override { 
 		int parsedVal = 0;
-		if (!(idStr::IsNumeric(val) && sscanf(val, "%d", &parsedVal) == 1))
-			common->Warning("Wrong idWinBool: \"%s\"", val);
-		data = ( parsedVal != 0 );
-		if (guiDict) {
-			guiDict->SetBool(GetName(), data);
+		int numChars = 0;
+		bool good = (idStr::IsNumeric(val) && sscanf(val, "%d%n", &parsedVal, &numChars) == 1 && !val[numChars]);
+		// stgatilov #5869: other integers will work fine, but better warn
+		good = good && (parsedVal == 0 || parsedVal == 1);
+		if (!dryRun) {
+			data = ( parsedVal != 0 );
+			if (guiDict) {
+				guiDict->SetBool(GetName(), data);
+			}
 		}
+		return good;
 	}
 
 	virtual void Update() {	
@@ -143,6 +155,7 @@ class idWinStr : public idWinVar {
 public:
 	idWinStr() : idWinVar() {};
 	~idWinStr() {};
+	virtual const char *GetTypeName() const override { return "str"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -195,11 +208,14 @@ public:
 		return data.c_str();
 	}
 
-	virtual void Set(const char *val) {
-		data = val;
-		if ( guiDict ) {
-			guiDict->Set(GetName(), data);
+	virtual bool _Set(const char *val, bool dryRun) override {
+		if (!dryRun) {
+			data = val;
+			if ( guiDict ) {
+				guiDict->Set(GetName(), data);
+			}
 		}
+		return true;
 	}
 
 	virtual void Update() {
@@ -246,6 +262,7 @@ class idWinInt : public idWinVar {
 public:
 	idWinInt() : idWinVar() {};
 	~idWinInt() {};
+	virtual const char *GetTypeName() const override { return "int"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name,  win);
 		if (guiDict) {
@@ -267,14 +284,17 @@ public:
 	operator int () const {
 		return data;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		int parsedVal = 0;
-		if (!(idStr::IsNumeric(val) && sscanf(val, "%d", &parsedVal) == 1))
-			common->Warning("Wrong idWinInt: \"%s\"", val);
-		data = parsedVal;
-		if (guiDict) {
-			guiDict->SetInt(GetName(), data);
+		int numChars = 0;
+		bool good = (idStr::IsNumeric(val) && sscanf(val, "%d%n", &parsedVal, &numChars) == 1 && !val[numChars]);
+		if (!dryRun) {
+			data = parsedVal;
+			if (guiDict) {
+				guiDict->SetInt(GetName(), data);
+			}
 		}
+		return good;
 	}
 
 	virtual void Update() {
@@ -308,6 +328,7 @@ class idWinFloat : public idWinVar {
 public:
 	idWinFloat() : idWinVar() {};
 	~idWinFloat() {};
+	virtual const char *GetTypeName() const override { return "float"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -329,14 +350,17 @@ public:
 	operator float() const {
 		return data;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		float parsedVal = 0;
-		if (!(idStr::IsNumeric(val) && sscanf(val, "%f", &parsedVal) == 1))
-			common->Warning("Wrong idWinFloat: \"%s\"", val);
-		data = parsedVal;
-		if (guiDict) {
-			guiDict->SetFloat(GetName(), data);
+		int numChars = 0;
+		bool good = (idStr::IsNumeric(val) && sscanf(val, "%f%n", &parsedVal, &numChars) == 1 && !val[numChars]);
+		if (!dryRun) {
+			data = parsedVal;
+			if (guiDict) {
+				guiDict->SetFloat(GetName(), data);
+			}
 		}
+		return good;
 	}
 	virtual void Update() {
 		const char *s = GetName();
@@ -366,6 +390,7 @@ class idWinRectangle : public idWinVar {
 public:
 	idWinRectangle() : idWinVar() {};
 	~idWinRectangle() {};
+	virtual const char *GetTypeName() const override { return "rect"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -430,7 +455,7 @@ public:
 		ret = data.ToVec4();
 		return ret;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val,bool dryRun) override {
 		int ret;
 		idRectangle v;
 		if ( strchr ( val, ',' ) ) {
@@ -438,13 +463,14 @@ public:
 		} else {
 			ret = sscanf( val, "%f %f %f %f", &v.x, &v.y, &v.w, &v.h );
 		}
-		if (ret != 4)
-			common->Warning("Wrong idWinRectangle: \"%s\"", val);
-		data = v;
-		if (guiDict) {
-			idVec4 v = data.ToVec4();
-			guiDict->SetVec4(GetName(), v);
+		if (!dryRun) {
+			data = v;
+			if (guiDict) {
+				idVec4 v = data.ToVec4();
+				guiDict->SetVec4(GetName(), v);
+			}
 		}
+		return (ret == 4);
 	}
 	virtual void Update() {
 		const char *s = GetName();
@@ -478,6 +504,7 @@ class idWinVec2 : public idWinVar {
 public:
 	idWinVec2() : idWinVar() {};
 	~idWinVec2() {};
+	virtual const char *GetTypeName() const override { return "vec2"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -506,7 +533,7 @@ public:
 	float y() const {
 		return data.y;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		int ret;
 		idVec2 v(0.0f, 0.0f);
 		if ( strchr ( val, ',' ) ) {
@@ -514,12 +541,13 @@ public:
 		} else {
 			ret = sscanf( val, "%f %f", &v.x, &v.y);
 		}
-		if (ret != 2)
-			common->Warning("Wrong idWinVec2: \"%s\"", val);
-		data = v;
-		if (guiDict) {
-			guiDict->SetVec2(GetName(), data);
+		if (!dryRun) {
+			data = v;
+			if (guiDict) {
+				guiDict->SetVec2(GetName(), data);
+			}
 		}
+		return (ret == 2);
 	}
 	operator const idVec2&() const {
 		return data;
@@ -554,6 +582,7 @@ class idWinVec4 : public idWinVar {
 public:
 	idWinVec4() : idWinVar() {};
 	~idWinVec4() {};
+	virtual const char *GetTypeName() const override { return "vec4"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -594,7 +623,7 @@ public:
 	float w() const {
 		return data.w;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		int ret;
 		idVec4 v(0.0f, 0.0f, 0.0f, 0.0f);
 		if ( strchr ( val, ',' ) ) {
@@ -603,12 +632,14 @@ public:
 			ret = sscanf( val, "%f %f %f %f", &v.x, &v.y, &v.z, &v.w);
 		}
 		//stgatilov: "transition" expects vec4, but it often receives scalar for e.g. "rotation" property
-		if (ret != 4 && ret != 1)
-			common->Warning("Wrong idWinVec4: \"%s\"", val);
-		data = v;
-		if ( guiDict ) {
-			guiDict->SetVec4( GetName(), data );
+		bool good = (ret == 4 || ret == 1);
+		if (!dryRun) {
+			data = v;
+			if ( guiDict ) {
+				guiDict->SetVec4( GetName(), data );
+			}
 		}
+		return good;
 	}
 	virtual void Update() {
 		const char *s = GetName();
@@ -648,6 +679,7 @@ class idWinVec3 : public idWinVar {
 public:
 	idWinVec3() : idWinVar() {};
 	~idWinVec3() {};
+	virtual const char *GetTypeName() const override { return "vec3"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		if (guiDict) {
@@ -685,7 +717,7 @@ public:
 		return data.z;
 	}
 
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		int ret;
 		idVec3 v(0.0f, 0.0f, 0.0f);
 		if ( strchr ( val, ',' ) ) {
@@ -693,12 +725,13 @@ public:
 		} else {
 			ret = sscanf( val, "%f %f %f", &v.x, &v.y, &v.z );
 		}
-		if (ret != 3)
-			common->Warning("Wrong idWinVec3: \"%s\"", val);
-		data = v;
-		if (guiDict) {
-			guiDict->SetVector(GetName(), data);
+		if (!dryRun) {
+			data = v;
+			if (guiDict) {
+				guiDict->SetVector(GetName(), data);
+			}
 		}
+		return (ret == 3);
 	}
 	virtual void Update() {
 		const char *s = GetName();
@@ -736,6 +769,7 @@ public:
 		mat = NULL;
 	};
 	~idWinBackground() {};
+	virtual const char *GetTypeName() const override { return "background"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinStr::Init(_name, win);
 		if (guiDict) {
@@ -791,18 +825,23 @@ public:
 		return data.c_str();
 	}
 
-	virtual void Set(const char *val) {
-		data = val;
-		if (guiDict) {
-			guiDict->Set(GetName(), data);
+	virtual bool _Set(const char *val, bool dryRun) override {
+		const idMaterial *matVal = nullptr;
+		if ( !val[0] ) {
+			matVal = nullptr;
+		} else {
+			matVal = declManager->FindMaterial(val);
 		}
-		if (mat) {
-			if ( data == "" ) {
-				(*mat) = NULL;
-			} else {
-				(*mat) = declManager->FindMaterial(data);
+		if (!dryRun) {
+			data = val;
+			if (guiDict) {
+				guiDict->Set(GetName(), data);
+			}
+			if (mat) {
+				(*mat) = matVal;
 			}
 		}
+		return true;
 	}
 
 	virtual void Update() {
@@ -880,6 +919,7 @@ class idWinUIntPtr : public idWinVar {
 public:
 	idWinUIntPtr() : idWinVar() {};
 	~idWinUIntPtr() {};
+	virtual const char *GetTypeName() const override { return "uintptr"; }
 	virtual void Init(const char *_name, idWindow *win) {
 		idWinVar::Init(_name, win);
 		assert(!guiDict);
@@ -897,12 +937,15 @@ public:
 	operator size_t() const {
 		return data;
 	}
-	virtual void Set(const char *val) {
+	virtual bool _Set(const char *val, bool dryRun) override {
 		size_t parsedVal = 0;
-		if (!(idStr::IsNumeric(val) && sscanf(val, "%zu", &parsedVal) == 1))
-			common->Warning("Wrong idWinUIntPtr: \"%s\"", val);
-		data = parsedVal;
-		assert(!guiDict);
+		int numChars = 0;
+		bool good = (idStr::IsNumeric(val) && sscanf(val, "%zu%n", &parsedVal, &numChars) == 1 && !val[numChars]);
+		if (!dryRun) {
+			data = parsedVal;
+			assert(!guiDict);
+		}
+		return good;
 	}
 
 	virtual void Update() {

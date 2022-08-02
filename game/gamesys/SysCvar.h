@@ -59,6 +59,7 @@ extern idCVar cv_ai_visdist_show;
 extern idCVar cv_ai_opt_disable;
 extern idCVar cv_ai_opt_noanims;
 extern idCVar cv_ai_opt_novisualscan;
+extern idCVar cv_ai_opt_forcedormant;
 extern idCVar cv_ai_opt_forceopt;
 extern idCVar cv_ai_opt_nothink;
 extern idCVar cv_ai_opt_interleavethinkmindist;
@@ -182,6 +183,7 @@ extern idCVar cv_pm_mantle_pullFast_msecs;
 extern idCVar cv_pm_mantle_pushNonCrouched_playgrunt_speedthreshold;
 extern idCVar cv_pm_mantle_fallingFast_speedthreshold;
 extern idCVar cv_pm_mantle_cancel_speed;
+extern idCVar cv_pm_mantle_tilt_mod;
 
 extern idCVar cv_pm_ladderSlide_speedLimit;
 

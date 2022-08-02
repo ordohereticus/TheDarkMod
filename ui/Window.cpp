@@ -29,6 +29,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "RenderWindow.h"
 #include "MarkerWindow.h"
 #include "FieldWindow.h"
+#include "SimpleWindow.h"
+#include "GuiScript.h"
 #include "../renderer/tr_local.h"
 
 // 
@@ -90,6 +92,32 @@ const char *idWindow::ScriptNames[] = {
 	"onEnter",
 	"onEnterRelease"
 };
+
+idTimeLineEvent::idTimeLineEvent() {
+	event = new idGuiScriptList;
+	time = -1;
+	pending = false;
+}
+idTimeLineEvent::~idTimeLineEvent() {
+	delete event;
+}
+size_t idTimeLineEvent::Size() const {
+	return sizeof(*this) + event->Size();
+}
+rvNamedEvent::rvNamedEvent(const char* name)
+{
+	mEvent = new idGuiScriptList;
+	mName  = name;
+}
+rvNamedEvent::~rvNamedEvent(void)
+{
+	delete mEvent;
+}
+size_t rvNamedEvent::Size() const
+{
+	return sizeof(*this) + mEvent->Size();
+}
+
 
 /*
 ================
@@ -1642,21 +1670,27 @@ bool idWindow::ParseScript(idParser *src, idGuiScriptList &list, int *timeParm, 
 		}
 
 		//stgatilov: add filename string to window pool if not there yet
-		const char *srcFilename = src->GetFileName();
-		if (!sourceFilenamePool.FindKey(srcFilename))
-			sourceFilenamePool.Set(srcFilename, "");
-		srcFilename = sourceFilenamePool.FindKey(srcFilename)->GetKey();
+		const char *srcFilename = src->GetDisplayFileName();
+		srcFilename = AddSourceFilenameToPool(srcFilename);
 
 		idGuiScript *gs = new idGuiScript();
 		if (token.Icmp("if") == 0) {
+			// stgatilov #5869: check that condition is enclosed in parentheses
+			src->ReadToken(&token);
+			if (token != "(") {
+				src->Warning("condition starts with '%s'", token.c_str());
+			}
+			src->UnreadToken(&token);
+
 			gs->conditionReg = ParseExpression(src);
 			gs->ifList = new idGuiScriptList();
-			gs->SetSourceLocation(srcFilename, src->GetLineNum());
+			gs->SetSourceLocation( {srcFilename, src->GetLineNum()} );
 			ParseScript(src, *gs->ifList, NULL);
+
 			if (src->ReadToken(&token)) {
 				if (token == "else") {
 					gs->elseList = new idGuiScriptList();
-					gs->SetSourceLocation(srcFilename, src->GetLineNum());
+					gs->SetSourceLocation( {srcFilename, src->GetLineNum()} );
 					// pass true to indicate we are parsing an else condition
 					ParseScript(src, *gs->elseList, NULL, true );
 				} else {
@@ -1683,8 +1717,8 @@ bool idWindow::ParseScript(idParser *src, idGuiScriptList &list, int *timeParm, 
 			 return false;
 		}
 
-		gs->SetSourceLocation(srcFilename, src->GetLineNum());
-		gs->Parse(src);
+		gs->SetSourceLocation( {srcFilename, src->GetLineNum()} );
+		gs->Parse(src, this);
 		list.Append(gs);
 	}
 
@@ -1807,109 +1841,129 @@ intptr_t idWindow::GetWinVarOffset(idWinVar *wv, drawWin_t* owner) {
 
 /*
 ================
+idWindow::GetThisWinVarByName
+================
+*/
+idWinVar *idWindow::GetThisWinVarByName(const char *_name) {
+	// first check or builtin variables
+	if (idStr::Icmp(_name, "notime") == 0) {
+		return &noTime;
+	}
+	if (idStr::Icmp(_name, "background") == 0) {
+		return &backGroundName;
+	}
+	if (idStr::Icmp(_name, "visible") == 0) {
+		return &visible;
+	}
+	if (idStr::Icmp(_name, "rect") == 0) {
+		return &rect;
+	}
+	if (idStr::Icmp(_name, "backColor") == 0) {
+		return &backColor;
+	}
+	if (idStr::Icmp(_name, "matColor") == 0) {
+		return &matColor;
+	}
+	if (idStr::Icmp(_name, "foreColor") == 0) {
+		return &foreColor;
+	}
+	if (idStr::Icmp(_name, "hoverColor") == 0) {
+		return &hoverColor;
+	}
+	if (idStr::Icmp(_name, "borderColor") == 0) {
+		return &borderColor;
+	}
+	if (idStr::Icmp(_name, "textScale") == 0) {
+		return &textScale;
+	}
+	if (idStr::Icmp(_name, "rotate") == 0) {
+		return &rotate;
+	}
+	if (idStr::Icmp(_name, "noEvents") == 0) {
+		return &noEvents;
+	}
+	if (idStr::Icmp(_name, "text") == 0) {
+		return &text;
+	}
+	if (idStr::Icmp(_name, "backGroundName") == 0) {
+		return &backGroundName;
+	}
+	if (idStr::Icmp(_name, "hidecursor") == 0) {
+		return &hideCursor;
+	}
+
+	// then check custom variables, e.g. created with "definefloat" keyword
+	for (int i = 0; i < definedVars.Num(); i++)
+		if (idStr::Icmp(_name, definedVars[i]->GetName()) == 0)
+			return definedVars[i];
+
+	return NULL;
+}
+
+/*
+================
 idWindow::GetWinVarByName
 ================
 */
-idWinVar *idWindow::GetWinVarByName(const char *_name, bool fixup, drawWin_t** owner) {
-	idWinVar *retVar = NULL;
+idWinVar *idWindow::GetWinVarByName(const char *fullname, drawWin_t *owner, idStr *varname) {
+	// check if name is qualified
+	idStr key = fullname;
+	int pos = key.Find("::");
 
-	if ( owner ) {
-		*owner = NULL;
-	}
+	if (pos < 0) {
+		// unqualified name: search in this window only
+		if (owner)
+			*owner = {this, nullptr};
+		if (varname)
+			*varname = fullname;
 
-	if (idStr::Icmp(_name, "notime") == 0) {
-		retVar = &noTime;
+		return GetThisWinVarByName(fullname);
 	}
-	if (idStr::Icmp(_name, "background") == 0) {
-		retVar = &backGroundName;
-	}
-	if (idStr::Icmp(_name, "visible") == 0) {
-		retVar = &visible;
-	}
-	if (idStr::Icmp(_name, "rect") == 0) {
-		retVar = &rect;
-	}
-	if (idStr::Icmp(_name, "backColor") == 0) {
-		retVar = &backColor;
-	}
-	if (idStr::Icmp(_name, "matColor") == 0) {
-		retVar = &matColor;
-	}
-	if (idStr::Icmp(_name, "foreColor") == 0) {
-		retVar = &foreColor;
-	}
-	if (idStr::Icmp(_name, "hoverColor") == 0) {
-		retVar = &hoverColor;
-	}
-	if (idStr::Icmp(_name, "borderColor") == 0) {
-		retVar = &borderColor;
-	}
-	if (idStr::Icmp(_name, "textScale") == 0) {
-		retVar = &textScale;
-	}
-	if (idStr::Icmp(_name, "rotate") == 0) {
-		retVar = &rotate;
-	}
-	if (idStr::Icmp(_name, "noEvents") == 0) {
-		retVar = &noEvents;
-	}
-	if (idStr::Icmp(_name, "text") == 0) {
-		retVar = &text;
-	}
-	if (idStr::Icmp(_name, "backGroundName") == 0) {
-		retVar = &backGroundName;
-	}
-	if (idStr::Icmp(_name, "hidecursor") == 0) {
-		retVar = &hideCursor;
-	}
+	else {
+		// qualified name: break into parts
+		idStr otherWinName = key.Left(pos);
+		idStr otherVarName = key.Right(key.Length() - pos - 2);
 
-	idStr key = _name;
-	bool guiVar = (key.Find(VAR_GUIPREFIX) >= 0);
-	int c = definedVars.Num();
-	for (int i = 0; i < c; i++) {
-		if (idStr::Icmp(_name, (guiVar) ? va("%s",definedVars[i]->GetName()) : definedVars[i]->GetName()) == 0) {
-			retVar = definedVars[i];
-			break;
+		// find window by name
+		drawWin_t win = GetGui()->GetDesktop()->FindChildByName(otherWinName);
+
+		// report back which window we found, and name of variable
+		if (owner)
+			*owner = win;
+		if (varname)
+			*varname = otherVarName;
+
+		// search variable in the window
+		if (win.win) {
+			return win.win->GetThisWinVarByName(otherVarName);
+		}
+		else if (win.simp) {
+			return win.simp->GetThisWinVarByName(otherVarName);
 		}
 	}
 
-	if (retVar) {
-		if (fixup && *_name != '$') {
-			DisableRegister(_name);
-		}
+	return nullptr;
+}
 
-		if ( owner && parent ) {
-			*owner = parent->FindChildByName ( name );
-		}
+/*
+================
+idWindow::GetAnyVarByName
+================
+*/
+idWinVar *idWindow::GetAnyVarByName(const char *varname) {
+	bool isGuiVar = (idStr::IcmpPrefix(varname, VAR_GUIPREFIX) == 0);
 
-		return retVar;
-	}
-
-	int len = key.Length();
-	if ( len > 5 && guiVar ) {
+	if (isGuiVar) {
+		// return newly created internal variable, linked to global variable in gui state
 		idWinVar *var = new idWinStr;
-		var->Init(_name, this);
+		var->Init(varname, this);
 		definedVars.Append(var);
 		return var;
-	} else if (fixup) {
-		int n = key.Find("::");
-		if (n > 0) {
-			idStr winName = key.Left(n);
-			idStr var = key.Right(key.Length() - n - 2);
-			drawWin_t *win = GetGui()->GetDesktop()->FindChildByName(winName);
-			if (win) {
-				if (win->win) {
-					return win->win->GetWinVarByName(var, false, owner);
-				} else {
-					if ( owner ) {
-						*owner = win;
-					}
-					return win->simp->GetWinVarByName(var);
-				}
-			} 
-		}
 	}
-	return NULL;
+	else {
+		// search for window variable, like "background"
+		return GetWinVarByName(varname, nullptr, nullptr);
+	}
 }
 
 /*
@@ -1919,9 +1973,11 @@ idWindow::ParseString
 */
 void idWindow::ParseString(idParser *src, idStr &out) {
 	idToken tok;
-	if (src->ReadToken(&tok)) {
-		out = tok;
+	if (!src->ReadToken(&tok)) {
+		// stgatilov #5869: report error if parameter is missing
+		src->Error("unexpected EOF while string expected");
 	}
+	out = tok;
 }
 
 /*
@@ -1946,19 +2002,38 @@ void idWindow::ParseVec4(idParser *src, idVec4 &out) {
 
 /*
 ================
+idWindow::ParseBool
+================
+*/
+bool idWindow::ParseBool(idParser *src) {
+	idToken token;
+	if ( !src->ExpectTokenType( TT_NUMBER, 0, &token ) ) {
+		src->Error( "couldn't read expected boolean" );
+		return false;
+	}
+	int value = token.GetIntValue();
+	if ( value != 0 && value != 1 ) {
+		// stgatilov #5869: this is most likely an error, better let user know about it
+		src->Warning( "expected boolean, found '%s'", token.c_str() );
+	}
+	return ( value != 0 );
+}
+
+/*
+================
 idWindow::ParseInternalVar
 ================
 */
 bool idWindow::ParseInternalVar(const char *_name, idParser *src) {
 
 	if (idStr::Icmp(_name, "showtime") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_SHOWTIME;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "showcoords") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_SHOWCOORDS;
 		}
 		return true;
@@ -1992,7 +2067,7 @@ bool idWindow::ParseInternalVar(const char *_name, idParser *src) {
 		return true;
 	}
 	if (idStr::Icmp(_name, "nowrap") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_NOWRAP;
 		}
 		return true;
@@ -2018,50 +2093,50 @@ bool idWindow::ParseInternalVar(const char *_name, idParser *src) {
 		idToken tok;
 		src->ReadToken( &tok );
 		if ( tok.Icmp( "," ) ) {
-			src->Error( "Expected comma in shear definiation" );
+			src->Error( "Expected comma in shear definition" );
 			return false;
 		}
 		shear.y = src->ParseFloat();
 		return true;
 	}
 	if (idStr::Icmp(_name, "wantenter") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_WANTENTER;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "naturalmatscale") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_NATURALMAT;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "noclip") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_NOCLIP;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "nocursor") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_NOCURSOR;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "menugui") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_MENUGUI;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "modal") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_MODAL;
 		}
 		return true;
 	}
 	if (idStr::Icmp(_name, "invertrect") == 0) {
-		if ( src->ParseBool() ) {
+		if ( ParseBool(src) ) {
 			flags |= WIN_INVERTRECT;
 		}
 		return true;
@@ -2099,53 +2174,61 @@ bool idWindow::ParseRegEntry(const char *name, idParser *src) {
 	work = name;
 	work.ToLower();
 
-	idWinVar *var = GetWinVarByName(work, false);
+	idWinVar *var = GetThisWinVarByName(work);
 	if ( var ) {
 		for (int i = 0; i < NumRegisterVars; i++) {
 			if (idStr::Icmp(work, RegisterVars[i].name) == 0) {
-				regList.AddReg(work, RegisterVars[i].type, src, this, var);
+				// stgatilov: name of builtin parameter like e.g. rect or visible
+				// these parameters can be assigned expressions, and are based on register evaluation
+				regList.ParseAndAddReg(work, RegisterVars[i].type, src, this, var);
 				return true;
 			}
 		}
+		// stgatilov: name of builtin parameter e.g. notime or updateGroup
+		// these parameters must be assigned immediate value without register evaluation
+		idToken tok;
+		src->ExpectAnyToken(&tok);
+		bool good = var->Set(tok);
+		if (!good) {
+			// stgatilov #5869: happens e.g. if you write notime 173 or notime abc
+			src->Warning("Variable '%s' of type '%s' got wrong value '%s'", work.c_str(), var->GetTypeName(), tok.c_str());
+		}
+		return true;
 	}
 
 	// not predefined so just read the next token and add it to the state
+
+	// stgatilov #5869: unknown name for window variable, complain about it
+	// if you really want to create a custom window variable, you should use definefloat keyword
+	src->Warning("Unknown variable '%s': perhaps use definefloat instead?", work.c_str());
+
 	idToken tok;
-	idVec4 v;	
-	idWinInt *vari;
-	idWinFloat *varf;
-	idWinStr *vars;
-	if (src->ReadToken(&tok)) {
-		if (var) {
-			var->Set(tok);
-			return true;
-		}
-		switch (tok.type) {
-			case TT_NUMBER : 
-				if (tok.subtype & TT_INTEGER) {
-					vari = new idWinInt();
-					*vari = atoi(tok);
-					vari->SetName(work);
-					definedVars.Append(vari);
-				} else if (tok.subtype & TT_FLOAT) {
-					varf = new idWinFloat();
-					*varf = atof(tok);
-					varf->SetName(work);
-					definedVars.Append(varf);
-				} else {
-					vars = new idWinStr();
-					*vars = tok;
-					vars->SetName(work);
-					definedVars.Append(vars);
-				}
-				break;
-			default :
-				vars = new idWinStr();
+	src->ExpectAnyToken(&tok);
+	switch (tok.type) {
+		case TT_NUMBER : 
+			if (tok.subtype & TT_INTEGER) {
+				idWinInt *vari = new idWinInt();
+				*vari = atoi(tok);
+				vari->SetName(work);
+				definedVars.Append(vari);
+			} else if (tok.subtype & TT_FLOAT) {
+				idWinFloat *varf = new idWinFloat();
+				*varf = atof(tok);
+				varf->SetName(work);
+				definedVars.Append(varf);
+			} else {
+				idWinStr *vars = new idWinStr();
 				*vars = tok;
 				vars->SetName(work);
 				definedVars.Append(vars);
-				break;
-		}
+			}
+			break;
+		default :
+			idWinStr *vars = new idWinStr();
+			*vars = tok;
+			vars->SetName(work);
+			definedVars.Append(vars);
+			break;
 	}
 
 	return true;
@@ -2189,6 +2272,10 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 
 	src->ExpectTokenType( TT_NAME, 0, &token );
 
+	//stgatilov: add filename string to window pool if not there yet
+	srcLocation = {src->GetDisplayFileName(), src->GetLineNum()};
+	srcLocation.filename = AddSourceFilenameToPool(srcLocation.filename);
+
 	SetInitialState(token);
 	TRACE_CPU_SCOPE_STR("Parse:Window", name)
 	declManager->BeginWindowLoad(this);
@@ -2217,10 +2304,12 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			src->ExpectTokenType( TT_NAME, 0, &token );
 			token2 = token;
 			src->UnreadToken(&token);
-			drawWin_t *dw = FindChildByName(token2.c_str());
-			if (dw && dw->win) {
+			// stgatilov #5869: ignore simple windows in this search
+			drawWin_t dw = FindChildByName(token2.c_str(), true);
+			if (dw.win) {
+				src->Warning("Window '%s' overrides previous definition at %s", token2.c_str(), dw.win->srcLocation.ToString().c_str());
 				SaveExpressionParseState();
-				dw->win->Parse(src, rebuild);
+				dw.win->Parse(src, rebuild);
 				RestoreExpressionParseState();
 			} else {
 				idWindow *win = new idWindow(dc, gui);
@@ -2331,14 +2420,9 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			dwt.win = win;
 			drawWindows.Append(dwt);
 		}
-// 
-//  added new onEvent
 		else if ( token == "onNamedEvent" ) {
 			// Read the event name
-			if ( !src->ReadToken(&token) ) {
-				src->Error( "Expected event name" );
-				return false;
-			}
+			src->ExpectTokenType( TT_NAME, 0, &token );
 
 			rvNamedEvent* ev = new rvNamedEvent ( token );
 			
@@ -2372,11 +2456,8 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 		else if ( token == "onTime" ) {
 			idTimeLineEvent *ev = new idTimeLineEvent;
 
-			if ( !src->ReadToken(&token) ) {
-				src->Error( "Unexpected end of file" );
-				return false;
-			}
-			ev->time = atoi(token.c_str());
+			src->ExpectTokenType( TT_NUMBER, TT_INTEGER, &token );
+			ev->time = token.GetIntValue();
 			
 			// reset the mark since we dont want it to include the time
 			src->SetMarker ( );
@@ -2422,7 +2503,7 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			src->SetMarker ( );
 
 			// Read in the float 
-			regList.AddReg(work, idRegister::FLOAT, src, this, varf);
+			regList.ParseAndAddReg(work, idRegister::FLOAT, src, this, varf);
 
 			// If we are in the gui editor then add the float to the defines
 #ifdef ID_ALLOW_TOOLS
@@ -2450,7 +2531,7 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			//        when this window is destoyed which even happens during parsing with simple windows ?
 			//definedVars.Append(var);
 			gui->GetDesktop()->definedVars.Append( var );
-			gui->GetDesktop()->regList.AddReg( work, idRegister::VEC4, src, gui->GetDesktop(), var );
+			gui->GetDesktop()->regList.ParseAndAddReg( work, idRegister::VEC4, src, gui->GetDesktop(), var );
 
 			// store the original vec4 for the editor
 			// If we are in the gui editor then add the float to the defines
@@ -2476,8 +2557,20 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			// set the marker to after the float name
 			src->SetMarker ( );
 
+			// stgatilov #5869: Unfortunately, it is common practice in TDM to declare window variables like this:
+			//   float exit;
+			// Here semicolon serves as value of variable (implicitly zero).
+			// This hacky code supports such conversion explicitly.
+			src->ReadToken(&token);
+			if (token == ";") {
+				token = "0";
+				token.type = TT_NUMBER;
+				token.subtype = TT_INTEGER;
+			}
+			src->UnreadToken(&token);
+
 			// Parse the float
-			regList.AddReg(work, idRegister::FLOAT, src, this, varf);
+			regList.ParseAndAddReg(work, idRegister::FLOAT, src, this, varf);
 
 			// If we are in the gui editor then add the float to the defines
 #ifdef ID_ALLOW_TOOLS
@@ -2522,7 +2615,7 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 			}
 #endif
 		}
-		else {
+		else if (token.type == TT_NAME) {
 			ParseRegEntry(token, src);
 			// hook into the main window parsing for the gui editor
 			// If we are in the gui editor then add the internal var to the 
@@ -2534,7 +2627,11 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 				rvGEWindowWrapper::GetWrapper ( this )->SetStateKey ( token, str, false );
 			}
 #endif
-		} 
+		} else {
+			// stgatilov #5869: the most common reason is semicolon at the end of previous window line
+			// but this can also be excessive number of similar stuff
+			src->Error( "Dropped unexpected token '%s' (window line expected)", token.c_str() );
+		}
 		if ( !src->ReadToken( &token ) ) {
 			src->Error( "Unexpected end of file" );
 			ret = false;
@@ -2562,53 +2659,61 @@ bool idWindow::Parse( idParser *src, bool rebuild) {
 	return ret;
 }
 
-/*
-================
-idWindow::FindSimpleWinByName
-================
-*/
-idSimpleWindow *idWindow::FindSimpleWinByName(const char *_name) {
-	int c = drawWindows.Num();
-	for (int i = 0; i < c; i++) {
-		if (drawWindows[i].simp == NULL) {
-			continue;
-		}
-		if ( idStr::Icmp(drawWindows[i].simp->name, _name) == 0 ) {
-			return drawWindows[i].simp;
-		} 
-	}
-	return NULL;
-}
 
 /*
 ================
 idWindow::FindChildByName
 ================
 */
-drawWin_t *idWindow::FindChildByName(const char *_name) {
-	static drawWin_t dw;
-	if (idStr::Icmp(name,_name) == 0) {
-		dw.simp = NULL;
-		dw.win = this;
-		return &dw;
+drawWin_t idWindow::FindChildByName(const char *_name, bool ignoreSimple) {
+	idList<drawWin_t> res;
+
+	FindChildrenByName(_name, res);
+
+	if (ignoreSimple) {
+		int k = 0;
+		for (int i = 0; i < res.Num(); i++)
+			if (res[i].win)
+				res[k++] = res[i];
+		res.SetNum(k, false);
+	}
+
+	if (res.Num() == 0)
+		return drawWin_t{nullptr, nullptr};
+
+	if (res.Num() > 1) {
+		idStr pathListStr;
+		for (int i = 0; i < res.Num(); i++) {
+			const idGuiSourceLocation &loc = (res[i].simp ? res[i].simp->srcLocation : res[i].win->srcLocation);
+			if (i > 0)
+				pathListStr += "  and  ";
+			pathListStr += loc.ToString();
+		}
+		//TEMPORARILY DISABLED for dev build
+		//common->Warning("Ambiguous reference to window '%s': %s", _name, pathListStr.c_str());
+	}
+	return res[0];
+}
+
+/*
+================
+idWindow::FindChildrenByName
+================
+*/
+void idWindow::FindChildrenByName(const char *_name, idList<drawWin_t> &allMatches) {
+	if (idStr::Icmp(name, _name) == 0) {
+		allMatches.AddGrow({this, nullptr});
 	}
 	int c = drawWindows.Num();
 	for (int i = 0; i < c; i++) {
 		if (drawWindows[i].win) {
-			if (idStr::Icmp(drawWindows[i].win->name, _name) == 0) {
-				return &drawWindows[i];
-			}
-			drawWin_t *win = drawWindows[i].win->FindChildByName(_name);
-			if (win) {
-				return win;
-			}
+			drawWindows[i].win->FindChildrenByName(_name, allMatches);
 		} else {
 			if (idStr::Icmp(drawWindows[i].simp->name, _name) == 0) {
-				return &drawWindows[i];
+				allMatches.AddGrow(drawWindows[i]);
 			}
 		}
 	}
-	return NULL;
 }
 
 /*
@@ -2884,16 +2989,6 @@ intptr_t idWindow::EmitOp(intptr_t a, intptr_t b, wexpOpType_t opType, wexpOp_t 
 	return op->c;
 }
 
-/*
-================
-idWindow::ParseEmitOp
-================
-*/
-intptr_t idWindow::ParseEmitOp(idParser *src, intptr_t a, wexpOpType_t opType, int priority, wexpOp_t **opp) {
-    intptr_t b = ParseExpressionPriority(src, priority);
-	return EmitOp( a, b, opType, opp );  
-}
-
 
 /*
 ================
@@ -2944,7 +3039,7 @@ intptr_t idWindow::ParseTerm(idParser *src, idWinVar *var, intptr_t component) {
 	}
 	
 	if (var == NULL) {
-		var = GetWinVarByName(token, true);
+		var = GetAnyVarByName(token);
 	}
 	if (var) {
         a = (intptr_t)var;
@@ -2973,13 +3068,19 @@ intptr_t idWindow::ParseTerm(idParser *src, idWinVar *var, intptr_t component) {
 			src->Warning("Var expression not vec4, float or int '%s'", token.c_str());
 		}
 		return 0;
-	} else {
+	} else if ( token.type == TT_STRING || token.type == TT_NAME ) {
 		// ugly but used for post parsing to fixup named vars
+		// stgatilov: will be handled in idWindow::FixupParms
 		char *p = new char[token.Length()+1];
 		strcpy(p, token);
         a = (intptr_t)p;
 		b = -2;
 		return EmitOp(a, b, WOP_TYPE_VAR);
+	} else {
+		// stgatilov #5869: warn and ignore if we see total trash
+		// only save name for fixup if string (previously it was always saved)
+		src->Error("Unexpected term '%s' in expression", token.c_str());
+		return 0;
 	}
 
 }
@@ -2991,78 +3092,97 @@ idWindow::ParseExpressionPriority
 Returns a register index
 =================
 */
-#define	TOP_PRIORITY 4
+#define	TOP_PRIORITY 7
 intptr_t idWindow::ParseExpressionPriority(idParser *src, int priority, idWinVar *var, intptr_t component) {
-	idToken token;
-    intptr_t		a;
-
 	if ( priority == 0 ) {
 		return ParseTerm( src, var, component );
 	}
 
-	a = ParseExpressionPriority( src, priority - 1, var, component );
+	intptr_t a = ParseExpressionPriority( src, priority - 1, var, component );
 
+	idToken token;
 	if ( !src->ReadToken( &token ) ) {
 		// we won't get EOF in a real file, but we can
 		// when parsing from generated strings
 		return a;
 	}
 
-	if ( priority == 1 && token == "*" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_MULTIPLY, priority );
-	}
-	if ( priority == 1 && token == "/" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_DIVIDE, priority );
-	}
-	if ( priority == 1 && token == "%" ) {	// implied truncate both to integer
-		return ParseEmitOp( src, a, WOP_TYPE_MOD, priority );
-	}
-	if ( priority == 2 && token == "+" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_ADD, priority );
-	}
-	if ( priority == 2 && token == "-" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_SUBTRACT, priority );
-	}
-	if ( priority == 3 && token == ">" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_GT, priority );
-	}
-	if ( priority == 3 && token == ">=" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_GE, priority );
-	}
-	if ( priority == 3 && token == "<" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_LT, priority );
-	}
-	if ( priority == 3 && token == "<=" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_LE, priority );
-	}
-	if ( priority == 3 && token == "==" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_EQ, priority );
-	}
-	if ( priority == 3 && token == "!=" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_NE, priority );
-	}
-	if ( priority == 4 && token == "&&" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_AND, priority );
-	}
-	if ( priority == 4 && token == "||" ) {
-		return ParseEmitOp( src, a, WOP_TYPE_OR, priority );
-	}
-	if ( priority == 4 && token == "?" ) {
+	if ( priority == 7 && token == "?" ) {
 		wexpOp_t *oop = NULL;
-        intptr_t o = ParseEmitOp(src, a, WOP_TYPE_COND, priority, &oop);
-		if ( !src->ReadToken( &token ) ) {
+		intptr_t b = ParseExpressionPriority( src, priority );
+		src->ReadToken( &token );
+		if ( token.Icmp( ":" ) == 0 ) {
+			intptr_t d = ParseExpressionPriority( src, priority, var );
+			intptr_t o = EmitOp( a, b, WOP_TYPE_COND, &oop );  
+			oop->d = d;
 			return o;
 		}
-		if (token == ":") {
-			a = ParseExpressionPriority( src, priority - 1, var );
-			oop->d = a;
+		else {
+			// this case should never happen
+			src->Warning( "Incomplete ternary operator" );
+			src->UnreadToken( &token );
+			return EmitOp( a, b, WOP_TYPE_COND, &oop );  
 		}
-		return o;
+	}
+
+	auto CheckOperationType = [priority](const idToken &token) -> wexpOpType_t {
+		if ( priority == 1 && token == "*" ) {
+			return WOP_TYPE_MULTIPLY;
+		}
+		if ( priority == 1 && token == "/" ) {
+			return WOP_TYPE_DIVIDE;
+		}
+		if ( priority == 1 && token == "%" ) {	// implied truncate both to integer
+			return WOP_TYPE_MOD;
+		}
+		if ( priority == 2 && token == "+" ) {
+			return WOP_TYPE_ADD;
+		}
+		if ( priority == 2 && token == "-" ) {
+			return WOP_TYPE_SUBTRACT;
+		}
+		if ( priority == 3 && token == ">" ) {
+			return WOP_TYPE_GT;
+		}
+		if ( priority == 3 && token == ">=" ) {
+			return WOP_TYPE_GE;
+		}
+		if ( priority == 3 && token == "<" ) {
+			return WOP_TYPE_LT;
+		}
+		if ( priority == 3 && token == "<=" ) {
+			return WOP_TYPE_LE;
+		}
+		if ( priority == 4 && token == "==" ) {
+			return WOP_TYPE_EQ;
+		}
+		if ( priority == 4 && token == "!=" ) {
+			return WOP_TYPE_NE;
+		}
+		if ( priority == 5 && token == "&&" ) {
+			return WOP_TYPE_AND;
+		}
+		if ( priority == 6 && token == "||" ) {
+			return WOP_TYPE_OR;
+		}
+		return WOP_TYPE_INVALID;
+	};
+
+	wexpOpType_t operType = CheckOperationType( token );
+	while ( operType != WOP_TYPE_INVALID ) {
+		// stgatilov: build tree with left-to-right evaluation order
+		// (original D3 code applied right-to-left order)
+		intptr_t b = ParseExpressionPriority( src, priority - 1, var, component );
+		a = EmitOp( a, b, operType );
+
+		if ( !src->ReadToken( &token ) ) {
+			return a;
+		}
+		operType = CheckOperationType( token );
 	}
 
 	// assume that anything else terminates the expression
 	// not too robust error checking...
-
 	src->UnreadToken( &token );
 
 	return a;
@@ -3100,22 +3220,18 @@ set to their apropriate values.
 ===============
 */
 void idWindow::EvaluateRegisters(float *registers) {
-	int		i, b;
-	wexpOp_t	*op;
-	idVec4 v;
-
 	int erc = expressionRegisters.Num();
 	int oc = ops.Num();
 	// copy the constants
-	for ( i = WEXP_REG_NUM_PREDEFINED ; i < erc ; i++ ) {
+	for ( int i = WEXP_REG_NUM_PREDEFINED ; i < erc ; i++ ) {
 		registers[i] = expressionRegisters[i];
 	}
 
 	// copy the local and global parameters
 	registers[WEXP_REG_TIME] = gui->GetTime();
 
-	for ( i = 0 ; i < oc ; i++ ) {
-		op = &ops[i];
+	for ( int i = 0 ; i < oc ; i++ ) {
+		wexpOp_t *op = &ops[i];
 		if (op->b == -2) {
 			continue;
 		}
@@ -3137,17 +3253,17 @@ void idWindow::EvaluateRegisters(float *registers) {
 				registers[op->c] = registers[op->a] / registers[op->b];
 			}
 			break;
-		case WOP_TYPE_MOD:
-			b = (int)registers[op->b];
+		case WOP_TYPE_MOD: {
+			int b = (int)registers[op->b];
 			b = b != 0 ? b : 1;
 			registers[op->c] = (int)registers[op->a] % b;
 			break;
-		case WOP_TYPE_TABLE:
-			{
-				const idDeclTable *table = static_cast<const idDeclTable *>( declManager->DeclByIndex( DECL_TABLE, op->a ) );
-				registers[op->c] = table->TableLookup( registers[op->b] );
-			}
+		}
+		case WOP_TYPE_TABLE: {
+			const idDeclTable *table = static_cast<const idDeclTable *>( declManager->DeclByIndex( DECL_TABLE, op->a ) );
+			registers[op->c] = table->TableLookup( registers[op->b] );
 			break;
+		}
 		case WOP_TYPE_GT:
 			registers[op->c] = registers[ op->a ] > registers[op->b];
 			break;
@@ -3183,7 +3299,9 @@ void idWindow::EvaluateRegisters(float *registers) {
 			if ( op->b >= 0 && registers[op->b] >= 0 && registers[op->b] < 4 ) {
 				// grabs vector components
 				idWinVec4 *var = (idWinVec4 *)( op->a );
-				registers[op->c] = ((idVec4&)var)[registers[op->b]];
+				const idVec4 &value = static_cast<const idVec4&>(*var);
+				int index = int(registers[op->b]);
+				registers[op->c] = value[index];
 			} else {
 				registers[op->c] = ((idWinVar*)(op->a))->x();
 			}
@@ -3224,7 +3342,6 @@ void idWindow::EvaluateRegisters(float *registers) {
 			common->FatalError( "R_EvaluateExpression: bad opcode" );
 		}
 	}
-
 }
 
 /*
@@ -3489,7 +3606,7 @@ idWindow::WriteSaveGameTransition
 ===============
 */
 void idWindow::WriteSaveGameTransition( idTransitionData &trans, idFile *savefile ) {
-	drawWin_t dw, *fdw;
+	drawWin_t dw, fdw;
 	idStr winName("");
 	dw.simp = NULL;
 	dw.win = NULL;
@@ -3498,7 +3615,7 @@ void idWindow::WriteSaveGameTransition( idTransitionData &trans, idFile *savefil
 		winName = ( dw.win ) ? dw.win->GetName() : dw.simp->name.c_str();
 	}
 	fdw = gui->GetDesktop()->FindChildByName( winName );
-	if ( offset != -1 && fdw && ( fdw->win || fdw->simp ) ) {
+	if ( offset != -1 && ( fdw.win || fdw.simp ) ) {
 		savefile->Write( &offset, sizeof( offset ) );
 		WriteSaveGameString( winName, savefile );
 		savefile->Write( &trans.interp, sizeof( trans.interp ) );
@@ -3846,41 +3963,41 @@ idWindow::FixupTransitions
 void idWindow::FixupTransitions() {
 	int i, c = transitions.Num();
 	for ( i = 0; i < c; i++ ) {
-		drawWin_t *dw = gui->GetDesktop()->FindChildByName( ( ( idWinStr* )transitions[i].data )->c_str() );
+		drawWin_t dw = gui->GetDesktop()->FindChildByName( ( ( idWinStr* )transitions[i].data )->c_str() );
 		delete transitions[i].data;
 		transitions[i].data = NULL;
-		if ( dw && ( dw->win || dw->simp ) ){
-			if ( dw->win ) {
+		if ( dw.win || dw.simp ){
+			if ( dw.win ) {
 				if ( transitions[i].offset == (ptrdiff_t)&this->rect - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->rect;
+					transitions[i].data = &dw.win->rect;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->backColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->backColor;
+					transitions[i].data = &dw.win->backColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->matColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->matColor;
+					transitions[i].data = &dw.win->matColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->foreColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->foreColor;
+					transitions[i].data = &dw.win->foreColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->borderColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->borderColor;
+					transitions[i].data = &dw.win->borderColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->textScale - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->textScale;
+					transitions[i].data = &dw.win->textScale;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->rotate - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->win->rotate;
+					transitions[i].data = &dw.win->rotate;
 				}
 			} else {
 				if ( transitions[i].offset == (ptrdiff_t)&this->rect - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->rect;
+					transitions[i].data = &dw.simp->rect;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->backColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->backColor;
+					transitions[i].data = &dw.simp->backColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->matColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->matColor;
+					transitions[i].data = &dw.simp->matColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->foreColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->foreColor;
+					transitions[i].data = &dw.simp->foreColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->borderColor - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->borderColor;
+					transitions[i].data = &dw.simp->borderColor;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->textScale - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->textScale;
+					transitions[i].data = &dw.simp->textScale;
 				} else if ( transitions[i].offset == (ptrdiff_t)&this->rotate - (ptrdiff_t)this ) {
-					transitions[i].data = &dw->simp->rotate;
+					transitions[i].data = &dw.simp->rotate;
 				}
 			}
 		}
@@ -3935,15 +4052,20 @@ void idWindow::FixupParms() {
 	c = ops.Num();
 	for (i = 0; i < c; i++) {
 		if (ops[i].b == -2) {
+			// stgatilov: this case was set at the end of idWindow::ParseTerm
+			assert(ops[i].opType == WOP_TYPE_VAR);
 			// need to fix this up
 			const char *p = (const char*)(ops[i].a);
-			idWinVar *var = GetWinVarByName(p, true);
+			idWinVar *var = GetAnyVarByName(p);
+			if (!var) {
+				// stgatilov #5869: zero op.a will evaluate as 0.0f in idWindow::EvaluateRegisters
+				common->Warning("Failed to fixup '%s' in window '%s', replaced with zero", p, name.c_str());
+			}
 			delete []p;
             ops[i].a = (intptr_t)var;
 			ops[i].b = -1;
 		}
 	}
-	
 	
 	if (flags & WIN_DESKTOP) {
 		CalcRects(0,0);
@@ -4030,12 +4152,12 @@ idWindow::SetChildWinVarVal
 ================
 */
 void idWindow::SetChildWinVarVal(const char *name, const char *var, const char *val) {
-	drawWin_t *dw = FindChildByName(name);
+	drawWin_t dw = FindChildByName(name);
 	idWinVar *wv = NULL;
-	if (dw && dw->simp) {
-		wv = dw->simp->GetWinVarByName(var);
-	} else if (dw && dw->win) {
-		wv = dw->win->GetWinVarByName(var);
+	if (dw.simp) {
+		wv = dw.simp->GetThisWinVarByName(var);
+	} else if (dw.win) {
+		wv = dw.win->GetThisWinVarByName(var);
 	}
 	if (wv) {
 		wv->Set(val);
@@ -4304,27 +4426,25 @@ bool idWindow::UpdateFromDictionary ( idDict& dict ) {
 	return true;
 }
 
+
 /*
 ================
-idWindow::BeforeExecute
-
-Hack to make idGuiScript additional info available in Script_XXX functions.
+idWindow::AddSourceFilenameToPool
 ================
 */
-void idWindow::BeforeExecute(idGuiScript *script) {
-	sourceFilenameCurrent = script->srcFilename;
-	sourceLineNumCurrent = script->srcLineNum;
+const char *idWindow::AddSourceFilenameToPool(const char *filename) {
+	if (!sourceFilenamePool.FindKey(filename))
+		sourceFilenamePool.Set(filename, "");
+	return sourceFilenamePool.FindKey(filename)->GetKey();
 }
 
 /*
 ================
-idWindow::GetCurrentSourceLocation
-
-Hack to make idGuiScript additional info available in Script_XXX functions.
+idGuiSourceLocation::ToString
 ================
 */
-idStr idWindow::GetCurrentSourceLocation() const {
-	if (!sourceFilenameCurrent)
+idStr idGuiSourceLocation::ToString() const {
+	if (!filename)
 		return "[unknown]";
-	return idStr(sourceFilenameCurrent) + ':' + idStr(sourceLineNumCurrent);
+	return idStr(filename) + ':' + idStr(linenum);
 }

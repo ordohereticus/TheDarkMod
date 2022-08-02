@@ -20,8 +20,6 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "DeviceContext.h"
 #include "RegExp.h"
 #include "Winvar.h"
-#include "GuiScript.h"
-#include "SimpleWindow.h"
 
 const int WIN_CHILD			= 0x00000001;
 const int WIN_CAPTION		= 0x00000002;
@@ -65,6 +63,7 @@ const char DEFAULT_BORDERCOLOR[] = "0 0 0 1";
 const char DEFAULT_TEXTSCALE[] = "0.4";
 
 typedef enum {
+	WOP_TYPE_INVALID = 0,		// stgatilov: not a valid operation, used internally
 	WOP_TYPE_ADD,
 	WOP_TYPE_SUBTRACT,
 	WOP_TYPE_MULTIPLY,
@@ -105,48 +104,46 @@ struct idRegEntry {
 
 class rvGEWindowWrapper;
 class idWindow;
+class idGuiScriptList;
 
 struct idTimeLineEvent {
-	idTimeLineEvent() {
-		event = new idGuiScriptList;
-	}
-	~idTimeLineEvent() {
-		delete event;
-	}
 	int time;
 	idGuiScriptList *event;
 	bool pending;
-	size_t Size() {
-		return sizeof(*this) + event->Size();
-	}
+
+	idTimeLineEvent();
+	~idTimeLineEvent();
+	size_t Size() const;
 };
 
-class rvNamedEvent
+struct rvNamedEvent
 {
-public:
-
-	rvNamedEvent(const char* name)
-	{
-		mEvent = new idGuiScriptList;
-		mName  = name;
-	}
-	~rvNamedEvent(void)
-	{
-		delete mEvent;
-	}
-	size_t Size() 
-	{
-		return sizeof(*this) + mEvent->Size();
-	}
-	
 	idStr				mName;
 	idGuiScriptList*	mEvent;
+
+	rvNamedEvent(const char* name);
+	~rvNamedEvent(void);
+	size_t Size() const;
 };
 
 struct idTransitionData {
 	idWinVar *data;
 	int	offset;
 	idInterpolateAccelDecelLinear<idVec4> interp;
+};
+
+class idSimpleWindow;
+
+typedef struct {
+	idWindow *win;
+	idSimpleWindow *simp;
+} drawWin_t;
+
+struct idGuiSourceLocation {
+	const char *filename = nullptr;	// points into idWindow::sourceFilenamePool
+	int linenum = -1;
+
+	idStr ToString() const;
 };
 
 
@@ -207,8 +204,7 @@ public:
 	void Size(float x, float y, float w, float h);
 	void SetupFromState();
 	void SetupBackground();
-	drawWin_t *FindChildByName(const char *name);
-	idSimpleWindow *FindSimpleWinByName(const char *_name);
+	drawWin_t FindChildByName(const char *name, bool ignoreSimple = false);
 	idWindow *GetParent() { return parent; }
 	idUserInterfaceLocal *GetGui() {return gui;};
 	bool Contains(float x, float y);
@@ -216,9 +212,18 @@ public:
 	virtual size_t Allocated();
 	idStr* GetStrPtrByName(const char *_name);
 
-	virtual idWinVar *GetWinVarByName	(const char *_name, bool winLookup = false, drawWin_t** owner = NULL);
+	// stgatilov: search for window variable with this exact name in "this" window
+	virtual idWinVar *GetThisWinVarByName(const char *varname);
+	// stgatilov: search for window variable:
+	//   either in this window if not qualified (e.g. "background")
+	//   or in specific window by qualified name (e.g. "OtherWindowName::background")
+	// writes window (which contains the variable) into *owner, unqualified name into varname
+	idWinVar *GetWinVarByName(const char *fullname, drawWin_t *owner, idStr *varname);
+	// stgatilov: search for window variable (see GetWinVarByName) or gui variable (e.g. "gui::green_background")
+	idWinVar *GetAnyVarByName(const char *varname);
 
-    intptr_t  GetWinVarOffset(idWinVar *wv, drawWin_t *dw);
+
+	intptr_t  GetWinVarOffset(idWinVar *wv, drawWin_t *dw);
 	float GetMaxCharHeight();
 	float GetMaxCharWidth();
 	void SetFont();
@@ -319,16 +324,13 @@ public:
 
 	bool		UpdateFromDictionary ( idDict& dict );
 
-	//stgatilov: debugging/error reporting
-	void		BeforeExecute(idGuiScript *script);
-	idStr		GetCurrentSourceLocation() const;
-
 protected:
 
 	friend		class rvGEWindowWrapper;
 
 	idWindow*	FindChildByPoint	( float x, float y, idWindow** below );
 	void		SetDefaults			( void );
+	const char *AddSourceFilenameToPool(const char *filename);
 
 	friend class idSimpleWindow;
 	friend class idUserInterfaceLocal;
@@ -343,7 +345,6 @@ protected:
 	int ExpressionTemporary();
 	wexpOp_t *ExpressionOp();
 	intptr_t EmitOp( intptr_t a, intptr_t b, wexpOpType_t opType, wexpOp_t **opp = NULL );
-	intptr_t ParseEmitOp( idParser *src, intptr_t a, wexpOpType_t opType, int priority, wexpOp_t **opp = NULL );
 	intptr_t ParseTerm( idParser *src, idWinVar *var = NULL, intptr_t component = 0 );
 	intptr_t ParseExpressionPriority( idParser *src, int priority, idWinVar *var = NULL, intptr_t component = 0 );
 	void EvaluateRegisters(float *registers);
@@ -355,7 +356,9 @@ protected:
 	virtual bool ParseInternalVar(const char *name, idParser *src);
 	void ParseString(idParser *src, idStr &out);
 	void ParseVec4(idParser *src, idVec4 &out);
+	bool ParseBool(idParser *src);
 	void ConvertRegEntry(const char *name, idParser *src, idStr &out, int tabs);
+	void FindChildrenByName(const char *name, idList<drawWin_t> &allMatches);	// appends all matches to list
 
 	float actualX;					// physical coords
 	float actualY;					// ''
@@ -441,9 +444,8 @@ protected:
 
 	//stgatilov: pool of source filename strings referenced in idGuiScript elements
 	idDict sourceFilenamePool;
-	//regularly set during script execution: workaround to pass this data into Script_Set
-	const char *sourceFilenameCurrent;
-	int sourceLineNumCurrent;
+	//stgatilov: error reporting and debuggability
+	idGuiSourceLocation srcLocation;	//points into sourceFilenamePool
 };
 
 ID_INLINE void idWindow::AddDefinedVar( idWinVar* var ) {

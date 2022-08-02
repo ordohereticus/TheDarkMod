@@ -16,14 +16,11 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #ifndef __SIMPLEWIN_H__
 #define __SIMPLEWIN_H__
 
+#include "Window.h"
+
 class idUserInterfaceLocal;
 class idDeviceContext;
 class idSimpleWindow;
-
-typedef struct {
-	idWindow *win;
-	idSimpleWindow *simp;
-} drawWin_t;
 
 class idSimpleWindow {
 	friend class idWindow;
@@ -35,7 +32,7 @@ public:
 
 	idStr			name;
 
-	idWinVar *		GetWinVarByName(const char *_name);
+	idWinVar *		GetThisWinVarByName(const char *varname);
     intptr_t		GetWinVarOffset(idWinVar *wv, drawWin_t* owner);
 	size_t			Size();
 
@@ -83,6 +80,8 @@ protected:
 	idWindow *		mParent;
 
 	idWinBool	hideCursor;
+
+	idGuiSourceLocation srcLocation;
 };
 
 #endif /* !__SIMPLEWIN_H__ */

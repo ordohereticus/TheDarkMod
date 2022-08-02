@@ -290,7 +290,9 @@ bool idUserInterfaceLocal::InitFromFile( const char *qpath, bool rebuild ) {
 	source = qpath;
 	state.Set( "text", "Test Text!" );
 
-	idParser src( LEXFL_NOFATALERRORS | LEXFL_NOSTRINGCONCAT | LEXFL_ALLOWMULTICHARLITERALS | LEXFL_ALLOWBACKSLASHSTRINGCONCAT );
+	// stgatilov #5869: removed LEXFL_ALLOWBACKSLASHSTRINGCONCAT,
+	//since it breaks multiline macros with a line ending on string literal
+	idParser src( LEXFL_NOFATALERRORS | LEXFL_NOSTRINGCONCAT | LEXFL_ALLOWMULTICHARLITERALS );
 
 	//Load the timestamp so reload guis will work correctly
 	fileSystem->ReadFile(qpath, NULL, &timeStamp);
@@ -304,15 +306,20 @@ bool idUserInterfaceLocal::InitFromFile( const char *qpath, bool rebuild ) {
 			src.AddDefine(line.c_str());
 		}
 
-		idToken token;
-		while( src.ReadToken( &token ) ) {
-			if ( idStr::Icmp( token, "windowDef" ) == 0 ) {
-				desktop->SetDC( &uiManagerLocal.dc );
-				if ( desktop->Parse( &src, rebuild ) ) {
-					desktop->SetFlag( WIN_DESKTOP );
-					desktop->FixupParms();
-				}
-				continue;
+		// stgatilov #5869: read one desktop window, from start to end
+		// note: original code skipped tokens and tried to parse any found windowDefs over and over again =(
+		if ( src.ExpectTokenString("windowDef") ) {
+			// parse desktop window
+			desktop->SetDC( &uiManagerLocal.dc );
+			desktop->Parse( &src, rebuild );
+			desktop->SetFlag( WIN_DESKTOP );
+			desktop->FixupParms();
+
+			// check that there is no trash afterwards
+			// this is typical issue if braces balance is broken (closed without opening)
+			idToken token;
+			if ( src.ReadToken(&token) ) {
+				src.Warning( "Excessive token '%s' after desktop ended", token.c_str() );
 			}
 		}
 
@@ -652,7 +659,7 @@ size_t idUserInterfaceLocal::Size() {
 
 void idUserInterfaceLocal::RecurseSetKeyBindingNames( idWindow *window ) {
 	int i;
-	idWinVar *v = window->GetWinVarByName( "bind" );
+	idWinVar *v = window->GetThisWinVarByName( "bind" );
 	if ( v ) {
 		SetStateString( v->GetName(), idKeyInput::KeysFromBinding( v->GetName() ) );
 	}
@@ -699,13 +706,13 @@ const char *idUserInterfaceLocal::RunGuiScript(const char *windowName, int scrip
 	idWindow *rootWin = GetDesktop();
 	if (!rootWin)
 		return NULL;
-	drawWin_t *dw = rootWin->FindChildByName(windowName);
-	if (!dw || !dw->win)
+	drawWin_t dw = rootWin->FindChildByName(windowName);
+	if (!dw.win)
 		return NULL;
-	bool ok = dw->win->RunScript(scriptNum);
+	bool ok = dw.win->RunScript(scriptNum);
 	if (!ok)
 		return NULL;
-	return dw->win->cmd.c_str();
+	return dw.win->cmd.c_str();
 }
 
 /*
@@ -717,11 +724,11 @@ bool idUserInterfaceLocal::ResetWindowTime(const char *windowName, int startTime
 	idWindow *rootWin = GetDesktop();
 	if (!rootWin)
 		return false;
-	drawWin_t *dw = rootWin->FindChildByName(windowName);
-	if (!dw || !dw->win)
+	drawWin_t dw = rootWin->FindChildByName(windowName);
+	if (!dw.win)
 		return false;
-	dw->win->ResetTime(startTime);
-	dw->win->EvalRegs(-1, true);
+	dw.win->ResetTime(startTime);
+	dw.win->EvalRegs(-1, true);
 	return true;
 }
 

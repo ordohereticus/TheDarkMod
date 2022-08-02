@@ -167,6 +167,10 @@ void idBrittleFracture::Save( idSaveGame *savefile ) const {
 
 	savefile->WriteFloat( m_lossBaseAI );		// grayman #3042
 	savefile->WriteFloat( m_lossBasePlayer );	// grayman #3042
+
+	savefile->WriteFloat( shardAliveTime );		// dragofer #5363
+	savefile->WriteFloat( shardFadeStart );		// dragofer #5363
+	savefile->WriteInt( m_lastCrackFrameNum );	// dragofer #5363
 }
 
 /*
@@ -259,6 +263,10 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadFloat( m_lossBaseAI );		// grayman #3042
 	savefile->ReadFloat( m_lossBasePlayer );	// grayman #3042
+
+	savefile->ReadFloat(shardAliveTime);		// dragofer #5363
+	savefile->ReadFloat(shardFadeStart);		// dragofer #5363
+	savefile->ReadInt(m_lastCrackFrameNum);		// dragofer #5363
 
 	UpdateSoundLoss();
 }
@@ -690,14 +698,14 @@ void idBrittleFracture::ApplyImpulse( idEntity *ent, int id, const idVec3 &point
 idBrittleFracture::AddForce
 ================
 */
-void idBrittleFracture::AddForce( idEntity *ent, int id, const idVec3 &point, const idVec3 &force ) {
+void idBrittleFracture::AddForce( idEntity *ent, int bodyId, const idVec3 &point, const idVec3 &force, const idForceApplicationId &applId ) {
 
-	if ( id < 0 || id >= shards.Num() ) {
+	if ( bodyId < 0 || bodyId >= shards.Num() ) {
 		return;
 	}
 
-	if ( shards[id]->droppedTime != -1 ) {
-		shards[id]->physicsObj.AddForce( 0, point, force );
+	if ( shards[bodyId]->droppedTime != -1 ) {
+		shards[bodyId]->physicsObj.AddForce( 0, point, force, applId );
 	} else if ( health <= 0 && !disableFracture ) {
 		Shatter( point, force, gameLocal.time );
 	}

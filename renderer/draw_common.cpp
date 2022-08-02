@@ -720,13 +720,19 @@ int RB_STD_DrawShaderPasses( drawSurf_t **drawSurfs, int numDrawSurfs, bool post
 	// because we want to defer the matrix load because many
 	// surfaces won't draw any ambient passes
 	backEnd.currentSpace = NULL;
-	bool singleRenderCopy = cv_lod_bias.GetFloat() < 2;
+
+	// stgatilov: disabled for now
+	static idCVar r_testPostprocessMultiple(
+		"r_testPostprocessMultiple", "1", CVAR_INTEGER | CVAR_RENDERER,
+		"Set above 1 to allow rendering more than one postprocessing surface with frame copy.\n"
+		"See also: https://forums.thedarkmod.com/index.php?/topic/21477-water-effects-not-rendered-through-warp-glass/page/4"
+	);
 	
 	for ( i = 0  ; i < numDrawSurfs ; i++ ) {
 		if ( drawSurfs[i]->sort >= SS_POST_PROCESS ) {
 			if ( !postProcessing )
 				break; // we need to draw the post process shaders after we have drawn the fog lights
-			if ( !renderCopies.Num() || ( !singleRenderCopy && !renderCopies.Find( drawSurfs[i]->material ) ) ) {
+			if ( !renderCopies.Find( drawSurfs[i]->material ) && renderCopies.Num() < r_testPostprocessMultiple.GetInteger() ) {
 				renderCopies.Append( drawSurfs[i]->material );
 				frameBuffers->UpdateCurrentRenderCopy();
 			}

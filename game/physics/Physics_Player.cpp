@@ -1341,7 +1341,7 @@ void idPhysics_Player::RopeMove( void )
 
 		// ishtvan fix: Always translational force, do not torque the rope body
 		// ropePhys->AddForce( bodID, ropePoint, vImpulse/0.1f );
-		ropePhys->AddForce( bodID, ropePhys->GetOrigin(bodID), vImpulse/0.1f );
+		ropePhys->AddForce( bodID, ropePhys->GetOrigin(bodID), vImpulse/0.1f, this );
 	}
 
 // ======================== Rope Swinging =====================
@@ -1397,7 +1397,7 @@ void idPhysics_Player::RopeMove( void )
 			kickDir.Normalize();
 		
 			float force = cv_pm_rope_swing_impulse.GetFloat() / MS2SEC(cv_pm_rope_swing_duration.GetFloat());
-			ropePhys->AddForce( bodID, bodyOrig, kickDir * force );
+			ropePhys->AddForce( bodID, bodyOrig, kickDir * force, this );
 		}
 	}
 
@@ -2101,7 +2101,7 @@ void idPhysics_Player::CheckGround( void ) {
 		{
 			// greebo: Apply a force to the entity below the player
 			//gameRenderWorld->DebugArrow(colorCyan, current.origin, current.origin + gravityNormal*20, 1, 16);
-			groundPhysics->AddForce(0, current.origin, gravityNormal*mass*cv_pm_weightmod.GetFloat());
+			groundPhysics->AddForce(0, current.origin, gravityNormal*mass*cv_pm_weightmod.GetFloat(), this);
 		}
 	}
 }
@@ -3570,7 +3570,7 @@ bool idPhysics_Player::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	MovePlayer( timeStepMSec );
 
 	// Apply the push force to all objects encountered during MovePlayer
-	m_PushForce->Evaluate(timeStepMSec);
+	m_PushForce->Evaluate( endTimeMSec );
 
 	clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
 
@@ -3944,7 +3944,7 @@ void idPhysics_Player::MantleMove()
 
 		newPosition = m_mantlePullStartPos;
 		float timeRadians = idMath::PI * timeRatio;
-		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance;
+		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance * cv_pm_mantle_tilt_mod.GetFloat();
 		newPosition += (idMath::Sin(timeRadians) * rockDistance) * viewRight;
 		
 		if (self != NULL)
@@ -3966,7 +3966,7 @@ void idPhysics_Player::MantleMove()
 		newPosition = m_mantlePullEndPos;
 		float timeRadians = idMath::PI * timeRatio;
 		newPosition += (idMath::Sin(timeRadians) * rockDistance) * viewRight;
-		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance;
+		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance * cv_pm_mantle_tilt_mod.GetFloat();
 
 		if (self != NULL)
 		{
@@ -3989,7 +3989,7 @@ void idPhysics_Player::MantleMove()
 
 		float timeRadians = idMath::PI * timeRatio;
 		newPosition += (idMath::Sin (timeRadians) * rockDistance) * viewRight;
-		viewAngles.roll = idMath::Sin (timeRadians) * rockDistance;
+		viewAngles.roll = idMath::Sin (timeRadians) * rockDistance * cv_pm_mantle_tilt_mod.GetFloat();
 
 		// stgatilov: set precise values at the very end of animation
 		if (timeRatio == 1.0f)
@@ -4014,7 +4014,7 @@ void idPhysics_Player::MantleMove()
 		newPosition = m_mantleCancelStartPos + timeRatio*totalMove;
 
 		float timeRadians = idMath::HALF_PI * timeRatio;
-		viewAngles.roll = idMath::Cos(timeRadians) * m_mantleCancelStartRoll;
+		viewAngles.roll = idMath::Cos(timeRadians) * m_mantleCancelStartRoll * cv_pm_mantle_tilt_mod.GetFloat();
 
 		if (self != NULL)
 		{
@@ -5932,9 +5932,18 @@ void idPhysics_Player::UpdateLean( void ) // grayman #4882 - expanded to handle 
 			player->SetListenLoc(m_LeanListenPos);
 		}
 	}
+	// Obsttorte: #5899 
+	else
+	{
+		if (player)
+		{
+			m_LeanEnt = NULL;
+			player->SetListenLoc(vec3_zero);
+		}
+	}
 }
 
-bool idPhysics_Player::IsPeakLeaning( void )
+bool idPhysics_Player::IsPeekLeaning( void )
 {
 	return (m_LeanEnt.GetEntity() != NULL) && m_LeanEnt.IsValid();
 }

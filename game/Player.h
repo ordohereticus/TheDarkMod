@@ -814,7 +814,7 @@ public:
 	// server side work for in/out of spectate. takes care of spawning it into the world as well
 	void					ServerSpectate( bool spectate );
 	// for very specific usage. != GetPhysics()
-	idPhysics				*GetPlayerPhysics( void );
+	idPhysics_Player		*GetPlayerPhysics( void );
 	void					TeleportDeath( int killer );
 	void					SetLeader( bool lead );
 	bool					IsLeader( void );
@@ -861,7 +861,7 @@ public:
 	// Gets called when the player releases the frob button
 	void					PerformFrobKeyRelease(int holdTime);
 
-	// Obstorte: #5984 (multilooting)
+	// Obsttorte: #5984 (multilooting)
 	bool					multiloot;
 	int						multiloot_lastfrob;
 
@@ -1471,6 +1471,8 @@ private:
 	void					Event_SetPeekView(int state, idVec3 peekViewOrigin); // grayman #4882
 
 	void					Event_IsLeaning(); // grayman #4882
+	void					Event_IsPeekLeaning(); // Obsttorte
+	void					Event_GetListenLoc(); // Obsttorte #5899
 
 	//stgatilov: testing script-cpp interop
 	void Event_TestEvent1(float float_pi, int int_beef, float float_exp, const char *string_tdm, float float_exp10, int int_food);
@@ -1486,7 +1488,7 @@ ID_INLINE bool idPlayer::IsRespawning( void ) {
 	return respawning;
 }
 
-ID_INLINE idPhysics* idPlayer::GetPlayerPhysics( void ) {
+ID_INLINE idPhysics_Player* idPlayer::GetPlayerPhysics( void ) {
 	return &physicsObj;
 }
 

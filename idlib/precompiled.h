@@ -16,8 +16,6 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #ifndef __PRECOMPILED_H__
 #define __PRECOMPILED_H__
 
-#include <Tracy.hpp>
-
 #include "sys/sys_defines.h"
 #include "sys/sys_includes.h"
 #include "sys/sys_assert.h"
@@ -26,14 +24,13 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 //-----------------------------------------------------
 
+#undef min
+#undef max
+#include <Tracy.hpp>
+
 #define ID_TIME_T time_t
 
 //-----------------------------------------------------
-
-#if !defined( _DEBUG ) && !defined( NDEBUG )
-	// don't generate asserts
-	#define NDEBUG
-#endif
 
 // non-portable system services
 #include "../sys/sys_public.h"

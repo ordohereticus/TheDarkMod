@@ -370,6 +370,8 @@ const idEventDef EV_Player_TestEvent3("testEvent3",	EventArgs(
 ), D_EVENT_VECTOR, "");
 
 const idEventDef EV_IsLeaning("isLeaning", EventArgs(), 'd', "Get whether the player is leaning"); // grayman #4882
+const idEventDef EV_IsPeekLeaning("isPeekLeaning", EventArgs(), 'd', "Get whether the player is peek leaning (against a keyhole or crack)"); // Obsttorte
+const idEventDef EV_GetListenLoc("getListenLoc", EventArgs(), 'v', "Retrieves the location of the listener when leaning."); // Obsttorte, used for debug #5899
 
 CLASS_DECLARATION( idActor, idPlayer )
 	EVENT( EV_Player_GetButtons,			idPlayer::Event_GetButtons )
@@ -481,6 +483,9 @@ CLASS_DECLARATION( idActor, idPlayer )
 	EVENT( EV_Player_TestEvent3,		idPlayer::Event_TestEvent3 )
 
 	EVENT(EV_IsLeaning,						idPlayer::Event_IsLeaning) // grayman #4882
+	EVENT(EV_IsPeekLeaning,					idPlayer::Event_IsPeekLeaning) // Obsttorte
+	EVENT(EV_GetListenLoc,					idPlayer::Event_GetListenLoc) // Obsttorte
+
 END_CLASS
 
 const int MAX_RESPAWN_TIME = 10000;
@@ -8522,7 +8527,7 @@ void idPlayer::CalculateFirstPersonView(void)
 
 #if 1
 	if ( physics->IsType(idPhysics_Player::Type) &&
-		static_cast<idPhysics_Player*>(physics)->IsPeakLeaning() &&
+		static_cast<idPhysics_Player*>(physics)->IsPeekLeaning() &&
 		!gameLocal.inCinematic )
 	{
 		SetSecondaryListenerLoc(m_ListenLoc);
@@ -11282,7 +11287,7 @@ float idPlayer::RangedThreatTo(idEntity* target) {
 #if 1 // grayman #4882
 void idPlayer::SetPrimaryListenerLoc(idVec3 loc)
 {
-	m_PrimaryListenerLoc = loc * DOOM_TO_METERS; // grayman #4882
+	m_PrimaryListenerLoc = loc; // grayman #4882
 }
 
 idVec3 idPlayer::GetPrimaryListenerLoc(void)
@@ -11302,7 +11307,7 @@ idVec3 idPlayer::GetListenLoc(void)
 
 void idPlayer::SetSecondaryListenerLoc(idVec3 loc)
 {
-	m_SecondaryListenerLoc = loc * DOOM_TO_METERS; // grayman #4882
+	m_SecondaryListenerLoc = loc;	// grayman #4882
 }
 
 idVec3 idPlayer::GetSecondaryListenerLoc(void)
@@ -12110,6 +12115,14 @@ void idPlayer::Event_IsLeaning() // grayman #4882
 	idThread::ReturnInt(physicsObj.IsLeaning());
 }
 
+void idPlayer::Event_IsPeekLeaning() // Obsttorte
+{
+	idThread::ReturnInt(physicsObj.IsPeekLeaning());
+}
+void idPlayer::Event_GetListenLoc() // Obsttorte
+{
+	idThread::ReturnVector(GetSecondaryListenerLoc());
+}
 //stgatilov: script-cpp interop testing code
 void TestEventError(const char *name) {
 	common->Error("Script events internal check failed (%s)\n", name);

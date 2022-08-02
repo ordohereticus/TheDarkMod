@@ -86,8 +86,8 @@ void ShadowMapStage::DrawShadowMap( const viewDef_t *viewDef ) {
 		}
 		qglClear( GL_DEPTH_BUFFER_BIT );
 		BeginDrawBatch();
-		DrawLightInteractions( vLight->globalInteractions );
-		DrawLightInteractions( vLight->localInteractions );
+		DrawLightInteractions( vLight->globalShadows );
+		DrawLightInteractions( vLight->localShadows );
 	}
 
 	for ( int i = 0; i < 4; i++ ) {
@@ -106,10 +106,6 @@ float ShadowMapStage::GetEffectiveLightRadius( viewLight_t *vLight ) {
 
 bool ShadowMapStage::ShouldDrawSurf( const drawSurf_t *surf ) const {
     const idMaterial *shader = surf->material;
-
-    if ( /*!shader->IsDrawn() || !shader->SurfaceCastsShadow() ||*/ (surf->dsFlags & DSF_SHADOW_MAP_IGNORE) ) {
-        return false;
-    }
 
     // some deforms may disable themselves by setting numIndexes = 0
     if ( !surf->numIndexes ) {

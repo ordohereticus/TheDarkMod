@@ -218,9 +218,9 @@ void idLexer::Error( const char *str, ... ) {
 	va_end(ap);
 
 	if ( idLexer::flags & LEXFL_NOFATALERRORS ) {
-		idLib::common->Warning( "file %s, line %d: %s", idLexer::filename.c_str(), idLexer::line, text );
+		idLib::common->Warning( "file %s, line %d: %s", idLexer::displayFilename.c_str(), idLexer::line, text );
 	} else {
-		idLib::common->Error( "file %s, line %d: %s", idLexer::filename.c_str(), idLexer::line, text );
+		idLib::common->Error( "file %s, line %d: %s", idLexer::displayFilename.c_str(), idLexer::line, text );
 	}
 }
 
@@ -240,7 +240,7 @@ void idLexer::Warning( const char *str, ... ) {
 	va_start( ap, str );
 	vsprintf( text, str, ap );
 	va_end( ap );
-	idLib::common->Warning( "file %s, line %d: %s", idLexer::filename.c_str(), idLexer::line, text );
+	idLib::common->Warning( "file %s, line %d: %s", idLexer::displayFilename.c_str(), idLexer::line, text );
 }
 
 /*
@@ -470,7 +470,7 @@ int idLexer::ReadString( idToken *token, int quote ) {
 				// step over the '\\'
 				idLexer::script_p++;
 				if ( !idLexer::ReadWhiteSpace() || ( *idLexer::script_p != quote ) ) {
-					idLexer::Error( "expecting string after '\' terminated line" );
+					idLexer::Error( "expecting string after '\\' terminated line" );
 					return 0;
 				}
 			}
@@ -1652,6 +1652,12 @@ int idLexer::LoadFile( const char *filename, bool OSPath ) {
 	idLexer::filename = fp->GetFullPath();
 	idLib::fileSystem->CloseFile( fp );
 
+	// stgatilov #5869: compute shorter non-absolute path for warnings
+	// make it relative to TDM root if possible
+	const char *tdmroot = cvarSystem->GetCVarString( "fs_basepath" );
+	displayFilename = idLexer::filename;
+	displayFilename.StripLeadingOnce(tdmroot);
+
 	idLexer::buffer = buf;
 	idLexer::length = length;
 	// pointer in script buffer
@@ -1681,6 +1687,7 @@ int idLexer::LoadMemory( const char *ptr, int length, const char *name, int star
 		return false;
 	}
 	idLexer::filename = name;
+	idLexer::displayFilename = name;
 	idLexer::buffer = ptr;
 	idLexer::fileTime = 0;
 	idLexer::length = length;

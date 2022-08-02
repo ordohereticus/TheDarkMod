@@ -131,9 +131,6 @@ SURFACES
 
 static const int DSF_VIEW_INSIDE_SHADOW	= 1;
 static const int DSF_SOFT_PARTICLE = 2; // #3878
-static const int DSF_SHADOW_MAP_IGNORE = 4; // #4641
-static const int DSF_SHADOW_MAP_ONLY = 8; // #4641
-static const int DSF_SORT_DEPTH = 16;
 
 struct viewLight_s;
 
@@ -263,6 +260,8 @@ public:
 
 	idVec3					globalLightOrigin;		// accounting for lightCenter and parallel
 	idBounds				globalLightBounds;
+
+	lightShadows_t 			shadows;				// per-light shadowing mode, not always == r_shadows (only valid if light within view)
 
 
 	idPlane					frustum[6];				// in global space, positive side facing out, last two are front/back
@@ -1350,6 +1349,8 @@ bool R_CreateAmbientCache( srfTriangles_t *tri, bool needsLighting );
 void R_CreatePrivateShadowCache( srfTriangles_t *tri );
 void R_CreateVertexProgramShadowCache( srfTriangles_t *tri );
 
+void R_AssignShadowMapAtlasPages( void );
+
 /*
 ============================================================
 
@@ -1499,6 +1500,11 @@ srfTriangles_t *R_CreateVertexProgramTurboShadowVolume( const idRenderEntityLoca
 		const srfTriangles_t *tri, const idRenderLightLocal *light,
 		srfCullInfo_t &cullInfo );
 
+// stgatilov #5886: BVH-accelerated equivalent of turbo shadow volume generation
+srfTriangles_t *R_CreateVertexProgramBvhShadowVolume( const idRenderEntityLocal *ent,
+	const srfTriangles_t *tri, const idRenderLightLocal *light );
+
+
 /*
 ============================================================
 
@@ -1572,6 +1578,7 @@ void				R_CreateVertexNormals( srfTriangles_t *tri );	// also called by dmap
 void				R_DeriveFacePlanes( srfTriangles_t *tri );		// also called by renderbump
 void				R_CleanupTriangles( srfTriangles_t *tri, bool createNormals, bool identifySilEdges, bool useUnsmoothedTangents );
 void				R_ReverseTriangles( srfTriangles_t *tri );
+void				R_BuildBvhForTri( srfTriangles_t *tri );
 
 // Only deals with vertexes and indexes, not silhouettes, planes, etc.
 // Does NOT perform a cleanup triangles, so there may be duplicated verts in the result.
@@ -1617,6 +1624,31 @@ typedef struct deformInfo_s {
 deformInfo_t 		*R_BuildDeformInfo( int numVerts, const idDrawVert *verts, int numIndexes, const int *indexes, bool useUnsmoothedTangents );
 void				R_FreeDeformInfo( deformInfo_t *deformInfo );
 int					R_DeformInfoMemoryUsed( deformInfo_t *deformInfo );
+
+typedef enum {
+	BVH_TRI_SURELY_WITHIN_LIGHT = 0x1,
+	BVH_TRI_SURELY_GOOD_ORI = 0x2,
+	BVH_TRI_SURELY_MATCH = BVH_TRI_SURELY_WITHIN_LIGHT | BVH_TRI_SURELY_GOOD_ORI,
+} bvhTriRangeInfo_t;
+
+// range including all triangles with indices in [beg..end)
+typedef struct triRange_s {
+	int beg;				// first triangle of range
+	int end;				// first triangle after range
+	int info;				// bvhTriRangeInfo_t bitmask
+	float box[2][3];		// bounding box of triangles in range
+
+	// ("box" is not idBounds to avoid initialization cost inside idFlexListHuge)
+	ID_FORCE_INLINE const idBounds& GetBox() const { return * (idBounds*) &box[0][0]; }
+	ID_FORCE_INLINE idBounds& GetBox() { return * (idBounds*) &box[0][0]; }
+} bvhTriRange_t;
+
+void R_CullBvhByFrustumAndOrigin(
+	const idBounds &rootBounds, const bvhNode_t *nodes,
+	const idPlane frustum[6], int filterOri, const idVec3 &origin,
+	int forceUnknown,
+	idFlexListHuge<bvhTriRange_t> &outIntervals
+);
 
 /*
 ============================================================

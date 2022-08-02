@@ -39,6 +39,10 @@ idCVar	idSessionLocal::com_maxTicsPerFrame("com_maxTicsPerFrame", "10", CVAR_SYS
 	"Never do more than this number of game tics per one frame. "
 	"When frames take too much time, allow game time to run slower than astronomical time.",
 1, 1000);
+idCVar	idSessionLocal::com_useMinorTics("com_useMinorTics", "1", CVAR_SYSTEM | CVAR_BOOL,
+	"If several game tics are modelled in one frame, all tics except the first one are declared \"minor\". "
+	"Minor tics can enable various optimizations, f.i. alive AIs don't think in minor tics.",
+1, 1000);
 idCVar	idSessionLocal::com_maxFPS( "com_maxFPS", "166", CVAR_SYSTEM | CVAR_ARCHIVE | CVAR_INTEGER, "define the maximum FPS cap", 2, 1000 );
 idCVar	idSessionLocal::com_showDemo("com_showDemo", "0", CVAR_SYSTEM | CVAR_BOOL, "");
 idCVar	idSessionLocal::com_skipGameDraw( "com_skipGameDraw", "0", CVAR_SYSTEM | CVAR_BOOL, "" );
@@ -189,6 +193,29 @@ Session_TestMap_f
 ==================
 */
 static void Session_TestMap_f( const idCmdArgs &args ) {
+	idStr map, string;
+
+	map = args.Argv(1);
+	if ( !map.Length() ) {
+		return;
+	}
+	map.StripFileExtension();
+
+	cmdSystem->BufferCommandText( CMD_EXEC_NOW, "disconnect" );
+
+	sprintf( string, "dmap maps/%s.map", map.c_str() );
+	cmdSystem->BufferCommandText( CMD_EXEC_NOW, string );
+
+	sprintf( string, "map %s", map.c_str() );
+	cmdSystem->BufferCommandText( CMD_EXEC_NOW, string );
+}
+
+/*
+==================
+Session_TestDevmap_f
+==================
+*/
+static void Session_TestDevmap_f( const idCmdArgs &args ) {
 	idStr map, string;
 
 	map = args.Argv(1);
@@ -1266,7 +1293,7 @@ void idSessionLocal::StartPlayingCmdDemo(const char *demoName) {
 	LoadCmdDemoFromFile(cmdDemoFile);
 
 	// run one frame to get the view angles correct
-	RunGameTic(USERCMD_MSEC);
+	RunGameTic(USERCMD_MSEC, false);
 }
 
 /*
@@ -1288,7 +1315,7 @@ void idSessionLocal::TimeCmdDemo( const char *demoName ) {
 	minuteStart = startTime;
 
 	while( cmdDemoFile ) {
-		RunGameTic(USERCMD_MSEC);
+		RunGameTic(USERCMD_MSEC, false);
 		count++;
 
 		if ( count / 3600 != ( count - 1 ) / 3600 ) {
@@ -2955,7 +2982,7 @@ void idSessionLocal::Frame() {
 idSessionLocal::RunGameTic
 ================
 */
-void idSessionLocal::RunGameTic(int timestepMs) {
+void idSessionLocal::RunGameTic(int timestepMs, bool minorTic) {
 	logCmd_t	logCmd;
 	usercmd_t	cmd;
 
@@ -3016,7 +3043,7 @@ void idSessionLocal::RunGameTic(int timestepMs) {
 
 	// run the game logic every player move
 	int	start = Sys_Milliseconds();
-	gameReturn_t	ret = game->RunFrame( &cmd, timestepMs );
+	gameReturn_t	ret = game->RunFrame( &cmd, timestepMs, minorTic );
 	int end = Sys_Milliseconds();
 	time_gameFrame += end - start;	// note time used for com_speeds
 
@@ -3059,7 +3086,10 @@ void idSessionLocal::RunGameTics() {
 		if (com_fixedTic.GetInteger() == 0) 
 			assert(deltaMs == USERCMD_MSEC);
 
-		RunGameTic(deltaMs);
+		// stgatilov #5992: optimize all tics except for the first one
+		bool minorTic = com_useMinorTics.GetBool() && (i > 0);
+
+		RunGameTic(deltaMs, minorTic);
 		if (!mapSpawned || syncNextGameFrame) {
 			break;
 		}
@@ -3268,6 +3298,7 @@ void idSessionLocal::Init() {
 	cmdSystem->AddCommand( "map", Session_Map_f, CMD_FL_SYSTEM, "loads a map", idCmdSystem::ArgCompletion_MapName );
 	cmdSystem->AddCommand( "devmap", Session_DevMap_f, CMD_FL_SYSTEM, "loads a map in developer mode", idCmdSystem::ArgCompletion_MapName );
 	cmdSystem->AddCommand( "testmap", Session_TestMap_f, CMD_FL_SYSTEM, "tests a map", idCmdSystem::ArgCompletion_MapName );
+	cmdSystem->AddCommand( "testdevmap", Session_TestDevmap_f, CMD_FL_SYSTEM, "tests a map in developer mode", idCmdSystem::ArgCompletion_MapName );
 
 	cmdSystem->AddCommand( "writeCmdDemo", Session_WriteCmdDemo_f, CMD_FL_SYSTEM, "writes a command demo" );
 	cmdSystem->AddCommand( "playCmdDemo", Session_PlayCmdDemo_f, CMD_FL_SYSTEM, "plays back a command demo" );

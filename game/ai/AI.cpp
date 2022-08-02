@@ -619,7 +619,7 @@ idAI::idAI()
 	m_minInterleaveThinkDist = 1000;
 	m_maxInterleaveThinkDist = 3000;
 	m_lastThinkTime = 0;
-	m_nextThinkFrame = 0;
+	m_nextThinkTime = 0;
 
 	INIT_TIMER_HANDLE(aiThinkTimer);
 	INIT_TIMER_HANDLE(aiMindTimer);
@@ -1017,7 +1017,7 @@ void idAI::Save(idSaveGame *savefile) const {
 	savefile->WriteFloat(m_maxInterleaveThinkDist);
 
 	savefile->WriteInt(m_lastThinkTime);
-	savefile->WriteInt(m_nextThinkFrame);
+	savefile->WriteInt(m_nextThinkTime);
 
 	savefile->WriteString(m_barkName); // grayman #3857
 	savefile->WriteInt(m_barkEndTime); // grayman #3857
@@ -1508,7 +1508,7 @@ void idAI::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat(m_maxInterleaveThinkDist);
 
 	savefile->ReadInt(m_lastThinkTime);
-	savefile->ReadInt(m_nextThinkFrame);
+	savefile->ReadInt(m_nextThinkTime);
 
 	savefile->ReadString(m_barkName); // grayman #3857
 	savefile->ReadInt(m_barkEndTime); // grayman #3857
@@ -2735,40 +2735,48 @@ idAI::ThinkingIsAllowed
 */
 bool idAI::ThinkingIsAllowed()
 {
-	int frameNum = gameLocal.framenum;
-	if (frameNum < m_nextThinkFrame)
+	int gameTime = gameLocal.time;
+
+	// Ragdolls think every frame to avoid physics weirdness.
+	// stgatilov: it is especially weird when grabbed by player =)
+	if ( (health <= 0) || IsKnockedOut() ) // grayman #2840 - you're also a ragdoll if you're KO'ed
+		return true;
+
+	// angua: AI think every frame while sitting/laying down and getting up
+	// otherwise, the AI might end up in a different sleeping position
+	if (move.moveType == MOVETYPE_SIT_DOWN
+		|| move.moveType == MOVETYPE_FALL_ASLEEP // grayman #3820 - was MOVETYPE_LAY_DOWN
+		|| move.moveType == MOVETYPE_GET_UP
+		|| move.moveType == MOVETYPE_WAKE_UP) // grayman #3820 - was MOVETYPE_GET_UP_FROM_LYING
 	{
-		// Ragdolls think every frame to avoid physics weirdness.
-		if ( ( health <= 0 ) || IsKnockedOut() ) // grayman #2840 - you're also a ragdoll if you're KO'ed
-		{
-			return true;
-		}
-
-		// angua: AI think every frame while sitting/laying down and getting up
-		// otherwise, the AI might end up in a different sleeping position
-		if (move.moveType == MOVETYPE_SIT_DOWN
-			|| move.moveType == MOVETYPE_FALL_ASLEEP // grayman #3820 - was MOVETYPE_LAY_DOWN
-			|| move.moveType == MOVETYPE_GET_UP
-			|| move.moveType == MOVETYPE_WAKE_UP) // grayman #3820 - was MOVETYPE_GET_UP_FROM_LYING
-		{
-			return true;
-		}
-
-		// skips PVS check, AI will also do interleaved thinking when in player view.
-		bool skipPVScheck = cv_ai_opt_interleavethinkskippvscheck.GetBool();
-		if (skipPVScheck)
-		{
-			return false;
-		}
-
-		// PVS check: let the AI think every frame as long as the player sees them.
-		bool inPVS = gameLocal.InPlayerPVS(this);
-		if (!inPVS)
-		{
-			return false;
-		}
+		return true;
 	}
-	return true;
+
+	// stgatilov: AIs should never wait for more than what interleaved thinking setting allows
+	if (gameTime - m_lastThinkTime >= GetMaxInterleaveThinkFrames() * USERCMD_MSEC)
+		return true;
+
+	// stgatilov #5992: this is not the first game tic in current frame?
+	// it means that FPS is low, so we probably need to optimize game modelling
+	// let's allow AIs think only once per frame, and skip thinking on followup "minor" game tics
+	if (gameLocal.minorTic)
+		return false;
+
+	// Time to think has come?
+	if (gameTime >= m_nextThinkTime)
+		return true;
+
+	// skips PVS check, AI will also do interleaved thinking when in player view.
+	bool skipPVScheck = cv_ai_opt_interleavethinkskippvscheck.GetBool() || cv_ai_opt_forceopt.GetBool();
+	if (skipPVScheck)
+		return false;
+
+	// PVS check: let the AI think every frame as long as the player sees them.
+	bool inPVS = gameLocal.InPlayerPVS(this);
+	if (inPVS)
+		return true;
+
+	return false;
 }
 
 
@@ -2780,9 +2788,9 @@ idAI::SetNextThinkFrame
 */
 void idAI::SetNextThinkFrame()
 {
-	int frameNum = gameLocal.framenum;
+	int gameTime = gameLocal.time;
 	int thinkFrame = GetThinkInterleave();
-	int thinkDelta = 1;
+	int thinkDeltaTime = 1;
 
 	if (thinkFrame > 1)
 	{
@@ -2800,7 +2808,6 @@ void idAI::SetNextThinkFrame()
 			//   * when resolving a block
 
 			bool thinkMore = false;
-			thinkDelta = thinkFrame;
 			ai::Memory& memory = GetMemory();
 			CFrobDoor *door = memory.doorRelated.currentDoor.GetEntity();
 
@@ -2836,8 +2843,9 @@ void idAI::SetNextThinkFrame()
 
 			if (thinkMore)
 			{
-				thinkDelta = (thinkFrame < TEMP_THINK_INTERLEAVE ? thinkFrame : TEMP_THINK_INTERLEAVE);
+				thinkFrame = idMath::Imin(thinkFrame, TEMP_THINK_INTERLEAVE);
 			}
+			thinkDeltaTime = thinkFrame * USERCMD_MSEC;
 		}
 		else
 		{
@@ -2845,7 +2853,16 @@ void idAI::SetNextThinkFrame()
 		}
 	}
 
-	m_nextThinkFrame = frameNum + thinkDelta;
+	m_nextThinkTime = gameTime + thinkDeltaTime;
+}
+
+
+int idAI::GetMaxInterleaveThinkFrames() const
+{
+	int cvarOverride = cv_ai_opt_interleavethinkframes.GetInteger();
+	if (cvarOverride > 0)
+		return cvarOverride;
+	return m_maxInterleaveThinkFrames;
 }
 
 /*
@@ -2855,10 +2872,10 @@ idAI::GetThinkInterleave
 */
 int idAI::GetThinkInterleave() const // grayman 2414 - add 'const'
 {
-	int maxFrames = m_maxInterleaveThinkFrames;
-	if (cv_ai_opt_interleavethinkframes.GetInteger() > 0)
+	int maxFrames = GetMaxInterleaveThinkFrames();
+	if (cv_ai_opt_forceopt.GetBool())
 	{
-		maxFrames = cv_ai_opt_interleavethinkframes.GetInteger();
+		return maxFrames;	// debug only: assume player is far
 	}
 
 	if (maxFrames == 0)

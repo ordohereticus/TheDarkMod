@@ -214,9 +214,6 @@ void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *
 		BeginDrawBatch();
 		const drawSurf_t *curBatchCaches = drawSurfs[0];
 		for ( const drawSurf_t *surf : drawSurfs ) {
-			if ( surf->dsFlags & DSF_SHADOW_MAP_ONLY ) {
-				continue;
-			}
 			if ( !surf->ambientCache.IsValid() || !surf->indexCache.IsValid() ) {
 #ifdef _DEBUG
 				common->Printf( "InteractionStage: missing vertex or index cache\n" );
@@ -284,7 +281,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 	uniforms->ssaoEnabled.Set( ambientOcclusion->ShouldEnableForCurrentView() ? 1 : 0 );
 
 	bool doShadows = !vLight->noShadows && vLight->lightShader->LightCastsShadows(); 
-	if ( doShadows && r_shadows.GetInteger() == 2 ) {
+	if ( doShadows && vLight->shadows == LS_MAPS ) {
 		// FIXME shadowmap only valid when globalInteractions not empty, otherwise garbage
 		doShadows = vLight->globalInteractions != NULL;
 	}
@@ -301,7 +298,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 	}
 	uniforms->shadowMapCullFront.Set( r_shadowMapCullFront );
 
-	if ( !translucent && ( vLight->globalShadows || vLight->localShadows || r_shadows.GetInteger() == 2 ) && !backEnd.viewDef->IsLightGem() ) {
+	if ( !translucent && ( vLight->globalShadows || vLight->localShadows ) && !backEnd.viewDef->IsLightGem() ) {
 		uniforms->softShadowsQuality.Set( r_softShadowsQuality.GetInteger() );
 	} else {
 		uniforms->softShadowsQuality.Set( 0 );

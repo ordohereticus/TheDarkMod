@@ -263,6 +263,11 @@ static bool R_PointInFrustum( idVec3 &p, idPlane *planes, int numPlanes ) {
 	return true;
 }
 
+idCVar r_volumetricForceShadowMaps(
+	"r_volumetricForceShadowMaps", "1", CVAR_BOOL | CVAR_RENDERER,
+	"If volumetrics need shadows, then switch the light to shadow maps even if stencil shadows are preferred in general. "
+);
+
 /*
 =============
 R_SetLightDefViewLight
@@ -343,6 +348,10 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 		else
 			vLight->shadows = LS_MAPS;
 	}
+	// stgatilov #5880: this is hacky!
+	// ideally, we should determine both shadows and volumetric lights without view involved
+	// used in view-independent function idInteraction::CreateInteraction to determine which implementation to generate shadow tris for
+	light->shadows = vLight->shadows;
 
 	// stgatilov #5816: copy volumetric dust settings, resolve noshadows behavior
 	vLight->volumetricDust = light->parms.volumetricDust;
@@ -353,9 +362,16 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	}
 	else {
 		if ( light->parms.volumetricNoshadows == 0 && vLight->shadows != LS_MAPS || r_volumetricSamples.GetInteger() <= 0 ) {
-			// volumetric light must never pass through walls, which can only be achieved with shadow map
-			// so we have to disable the volumetric light entirely
-			vLight->volumetricDust = 0.0f;
+			if ( vLight->volumetricDust > 0.0f && r_volumetricForceShadowMaps.GetBool() ) {
+				// force shadow maps implementation
+				// ATTENTION: modifies "shadows" member, which is normally defined earlier in this function
+				light->shadows = vLight->shadows = LS_MAPS;
+			}
+			else {
+				// volumetric light must never pass through walls, which can only be achieved with shadow map
+				// so we have to disable the volumetric light entirely
+				vLight->volumetricDust = 0.0f;
+			}
 		}
 		if ( light->parms.volumetricNoshadows == 1 || vLight->shadows != LS_MAPS ) {
 			// no shadow map available, or mapper said to ignore shadows -> disable shadows in volumetric light
@@ -620,21 +636,8 @@ drawSurf_t *R_PrepareLightSurf( const srfTriangles_t *tri, const viewEntity_t *s
 	drawSurf->space = space;
 	drawSurf->material = material;
 	drawSurf->scissorRect = scissor;
-	drawSurf->dsFlags = scissor.IsEmpty() ? DSF_SHADOW_MAP_ONLY : 0;
-	if ( space->entityDef && space->entityDef->parms.noShadow || !material || !material->SurfaceCastsShadow() ) { // some dynamic models use a no-shadow material and for shadows have a separate geometry with an invisible (in main render) material
-		drawSurf->dsFlags |= DSF_SHADOW_MAP_IGNORE;
-	}
+	drawSurf->dsFlags = 0;
 	
-	static idCVar r_skipDynamicShadows( "r_skipDynamicShadows", "0", CVAR_ARCHIVE | CVAR_BOOL | CVAR_RENDERER, "" );
-	if ( r_skipDynamicShadows.GetBool() )
-		for ( auto ent = space; ent; ent = ent->next ) {
-			//&& !space->entityDef->parms.hModel->IsStaticWorldModel() 
-			//	&& space->entityDef->lastModifiedFrameNum == tr.viewCount 
-			if ( ent->entityDef && ent->entityDef->parms.hModel && ent->entityDef->parms.hModel->IsDynamicModel() ) {
-				drawSurf->dsFlags |= DSF_SHADOW_MAP_IGNORE;
-			}
-		}
-
 	drawSurf->particle_radius = 0.0f; // #3878
 
 	if ( viewInsideShadow ) {
@@ -1171,8 +1174,6 @@ void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const 
 	drawSurf->scissorRect = scissor;
 	drawSurf->sort = material->GetSort();
 	drawSurf->dsFlags = 0;
-	if( scissor.IsEmpty() )
-		drawSurf->dsFlags |= DSF_SHADOW_MAP_ONLY;
 	if ( soft_particle_radius != -1.0f ) {	// #3878
 		drawSurf->dsFlags |= DSF_SOFT_PARTICLE;
 		drawSurf->particle_radius = soft_particle_radius;
@@ -1180,17 +1181,8 @@ void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const 
 		drawSurf->particle_radius = 0.0f;
 	}
 	if ( auto eDef = space->entityDef ) {
-		if ( eDef->parms.noShadow || !material || !material->SurfaceCastsShadow() ) {
-			drawSurf->dsFlags |= DSF_SHADOW_MAP_IGNORE;		// multi-light shader optimization
-			tr.pc.c_noshadowSurfs++;
-		}
 		if ( eDef->parms.sortOffset )
 			drawSurf->sort += eDef->parms.sortOffset;
-		if ( material->GetSort() > SS_POST_PROCESS ) {
-			if ( !eDef->parms.hModel->IsDynamicModel() ) {
-				drawSurf->dsFlags |= DSF_SORT_DEPTH;
-			}
-		}
 	}
 
 	if (!deferred) {
@@ -1384,7 +1376,7 @@ static void R_AddAmbientDrawsurfs( viewEntity_t *vEntity ) {
 			continue;
 		}
 
-		if ( !shader->IsDrawn() && r_shadows.GetInteger() != 2 ) {
+		if ( !shader->IsDrawn() ) {
 			continue;
 		}
 
@@ -1715,36 +1707,31 @@ void R_RemoveUnecessaryViewLights( void ) {
 	LinkedListBubbleSort( &tr.viewDef->viewLights, &viewLight_s::next, [](const viewLight_t &a, const viewLight_t &b) -> bool {
 		return a.scissorRect.GetArea() > b.scissorRect.GetArea();
 	});
+}
 
-	if ( r_shadows.GetInteger() == 2 ) {
-		int ShadowAtlasIndex = 0;
-		switch ( tr.viewDef->renderView.viewID ) { // force lower precision for shadow maps in subviews
-		case VID_LIGHTGEM:
-			ShadowAtlasIndex = 6;
-			break;
-		case VID_SUBVIEW:
-			ShadowAtlasIndex = 2;
-			break;
+/*
+=====================
+R_AssignShadowMapAtlasPages
+=====================
+*/
+void R_AssignShadowMapAtlasPages( void ) {
+	int ShadowAtlasIndex = 0;
+
+	// force lower precision for shadow maps in subviews
+	switch ( tr.viewDef->renderView.viewID ) {
+	case VID_LIGHTGEM:
+		ShadowAtlasIndex = 6;
+		break;
+	case VID_SUBVIEW:
+		ShadowAtlasIndex = 2;
+		break;
+	}
+
+	// assign shadow pages and prepare lights for single/multi processing
+	// singleLightOnly flag is now set in frontend
+	for ( viewLight_t *vLight = tr.viewDef->viewLights; vLight; vLight = vLight->next ) {
+		if ( vLight->shadows == LS_MAPS ) {
+			vLight->shadowMapIndex = ++ShadowAtlasIndex;
 		}
-		// assign shadow pages and prepare lights for single/multi processing // singleLightOnly flag is now set in frontend
-		for ( auto vLight = tr.viewDef->viewLights; vLight; vLight = vLight->next )
-			if ( vLight->shadows == LS_MAPS ) {
-				vLight->shadowMapIndex = ++ShadowAtlasIndex;
-				// if we are doing a soft-shadow novelty test, regenerate the light with a random offset every time
-				if ( vLight->shadowMapIndex == 1 ) {
-					/*vLight->globalLightOrigin[0] += r_lightSourceRadius.GetFloat() * (-1 + 2 * (rand() & 0xfff) / (float)0xfff);
-					vLight->globalLightOrigin[1] += r_lightSourceRadius.GetFloat() * (-1 + 2 * (rand() & 0xfff) / (float)0xfff);
-					vLight->globalLightOrigin[2] += r_lightSourceRadius.GetFloat() * (-1 + 2 * (rand() & 0xfff) / (float)0xfff);*/
-					//tr.viewDef->lightSample.z = (backEnd.frameCount % 8) - 3.5;
-					tr.viewDef->lightSample.x = backEnd.frameCount & 1 ? 1 : -1;
-					tr.viewDef->lightSample.y = backEnd.frameCount & 2 ? 1 : -1;
-					tr.viewDef->lightSample.z = backEnd.frameCount & 4 ? 1 : -1;
-					float r = 1;// static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-					tr.viewDef->lightSample *= r_lightSourceRadius.GetFloat() * sqrt(r);
-					vLight->globalLightOrigin += tr.viewDef->lightSample;
-					tr.viewDef->lightSample = vLight->globalLightOrigin;
-				}
-
-			}
 	}
 }

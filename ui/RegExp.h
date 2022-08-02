@@ -24,8 +24,12 @@ public:
 						idRegister();
 						idRegister( const char *p, int t );
 
+	bool				SetVar( idWinVar *var );
+
 	enum REGTYPE { VEC4 = 0, FLOAT, BOOL, INT, STRING, VEC2, VEC3, RECTANGLE, NUMTYPES } ;
 	static int REGCOUNT[NUMTYPES];
+
+	static REGTYPE		RegTypeForVar( idWinVar *var );
 
 	bool				enabled;
 	short				type;
@@ -69,8 +73,8 @@ public:
 						idRegisterList();
 						~idRegisterList();
 
-	void				AddReg( const char *name, int type, idParser *src, idWindow *win, idWinVar *var );
-	void				AddReg( const char *name, int type, idVec4 data, idWindow *win, idWinVar *var );
+	void				AddReg( const char *name, int type, const int *expressions, idWinVar *var);
+	void				ParseAndAddReg( const char *name, int type, idParser *src, idWindow *win, idWinVar *var );
 
 	idRegister *		FindReg( const char *name );
 	void				SetToRegs( float *registers );

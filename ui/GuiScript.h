@@ -15,13 +15,21 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #ifndef __GUISCRIPT_H
 #define __GUISCRIPT_H
 
-#include "Window.h"
 #include "Winvar.h"
+#include "Window.h"
 
 struct idGSWinVar {
 	idGSWinVar() {
 		var = NULL;
 		own = false;
+	}
+	void RelinkVar(idWinVar *newVar, bool newOwn) {
+		if (own && var) {
+			assert(var != newVar);
+			delete var;
+		}
+		var = newVar;
+		own = newOwn;
 	}
 	idWinVar* var;
 	bool own;
@@ -37,14 +45,14 @@ public:
 	idGuiScript();
 	~idGuiScript();
 
-	void SetSourceLocation(const char *filename, int linenum) {
-		srcFilename = filename;	//pointer must live as long as owner window lives!
-		srcLineNum = linenum;
-	}
-	bool Parse(idParser *src);
+	void SetSourceLocation(const idGuiSourceLocation &loc) { srcLocation = loc; }
+	const idGuiSourceLocation &GetSourceLocation() const { return srcLocation; }
+	idStr GetSrcLocStr() const;
+
+	bool Parse(idParser *src, idWindow *win);
 	void Execute(idWindow *win) {
 		if (handler) {
-			handler(win, &parms);
+			handler(this, win, &parms);
 		}
 	}
 	void FixupParms(idWindow *win);
@@ -64,10 +72,9 @@ protected:
 	idGuiScriptList *ifList;
 	idGuiScriptList *elseList;
 	idList<idGSWinVar> parms;
-	void (*handler) (idWindow *window, idList<idGSWinVar> *src);
+	void (*handler) (idGuiScript *self, idWindow *window, idList<idGSWinVar> *src);
 	//stgatilov: error reporting and debuggability
-	const char *srcFilename;	//points into owner's idWindow::sourceFilenamePool
-	int srcLineNum;
+	idGuiSourceLocation srcLocation;	//points into owner's idWindow::sourceFilenamePool
 };
 
 

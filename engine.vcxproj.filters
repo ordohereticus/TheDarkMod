@@ -999,9 +999,6 @@
     <ClInclude Include="game\darkModLAS.h">
       <Filter>Game</Filter>
     </ClInclude>
-    <ClInclude Include="game\decltdm_matinfo.h">
-      <Filter>Game</Filter>
-    </ClInclude>
     <ClInclude Include="game\declxdata.h">
       <Filter>Game</Filter>
     </ClInclude>
@@ -1607,6 +1604,12 @@
       <Filter>Game</Filter>
     </ClInclude>
     <ClInclude Include="idlib\bv\BoxOctree.h">
+      <Filter>Idlib\BV</Filter>
+    </ClInclude>
+    <ClInclude Include="idlib\bv\Bvh.h">
+      <Filter>Idlib\BV</Filter>
+    </ClInclude>
+    <ClInclude Include="idlib\bv\CircCone.h">
       <Filter>Idlib\BV</Filter>
     </ClInclude>
   </ItemGroup>
@@ -3027,9 +3030,6 @@
     <ClCompile Include="game\darkModLAS.cpp">
       <Filter>Game</Filter>
     </ClCompile>
-    <ClCompile Include="game\decltdm_matinfo.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
     <ClCompile Include="game\declxdata.cpp">
       <Filter>Game</Filter>
     </ClCompile>
@@ -3560,6 +3560,12 @@
       <Filter>Game</Filter>
     </ClCompile>
     <ClCompile Include="idlib\bv\BoxOctree.cpp">
+      <Filter>Idlib\BV</Filter>
+    </ClCompile>
+    <ClCompile Include="idlib\bv\Bvh.cpp">
+      <Filter>Idlib\BV</Filter>
+    </ClCompile>
+    <ClCompile Include="idlib\bv\CircCone.cpp">
       <Filter>Idlib\BV</Filter>
     </ClCompile>
   </ItemGroup>

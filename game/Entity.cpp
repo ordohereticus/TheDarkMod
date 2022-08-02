@@ -1471,7 +1471,7 @@ void idEntity::LoadModels()
 	}
 
 	// greebo: Only try to cache the model if it actually exists -> otherwise tons of false warnings get emitted
-	bool brokenModelFileExists = (fileSystem->FindFile(brokenModel) != FIND_NO);
+	bool brokenModelFileExists = brokenModel.Length() > 0 && (fileSystem->FindFile(brokenModel) != FIND_NO);
 
 	if (brokenModelFileExists)
 	{
@@ -2326,7 +2326,11 @@ off from the player can skip all of their work
 */
 bool idEntity::DoDormantTests( void )
 {
-	if (cv_ai_opt_forceopt.GetBool()) return true; // Everything always dormant!
+	if ( cv_ai_opt_forcedormant.GetInteger() > 0)
+		return true; // Everything always dormant!
+	if ( cv_ai_opt_forcedormant.GetInteger() < 0)
+		return false; // Everything never dormant!
+
 	if ( fl.neverDormant ) {
 		return false;
 	}
@@ -5397,6 +5401,7 @@ bool idEntity::RunPhysics( void ) {
 		{
 			// run physics
 			moved = part->physics->Evaluate( endTime - startTime, endTime );
+
 			// check if the object is blocked
 			blockingEntity = part->physics->GetBlockingEntity();
 			if ( blockingEntity ) {
@@ -5471,8 +5476,7 @@ bool idEntity::RunPhysics( void ) {
 				rigidBodyPhysics->CollisionImpulse(*blockedPart->GetPhysics()->GetBlockingInfo(), impulse);
 
 				// greebo: Apply some damping due to the collision with a slave
-				rigidBodyPhysics->State().i.linearMomentum *= 0.95f;
-				rigidBodyPhysics->State().i.angularMomentum *= 0.99f;
+				rigidBodyPhysics->DampenMomentums(0.95f, 0.99f);
 			}
 		}
 
@@ -5701,8 +5705,8 @@ void idEntity::ApplyImpulse( idEntity *ent, int id, const idVec3 &point, const i
 idEntity::AddForce
 ================
 */
-void idEntity::AddForce( idEntity *ent, int id, const idVec3 &point, const idVec3 &force ) {
-	GetPhysics()->AddForce( id, point, force );
+void idEntity::AddForce( idEntity *ent, int bodyId, const idVec3 &point, const idVec3 &force, const idForceApplicationId &applId ) {
+	GetPhysics()->AddForce( bodyId, point, force, applId );
 }
 
 /*

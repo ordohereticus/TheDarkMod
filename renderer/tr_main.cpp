@@ -1014,24 +1014,18 @@ R_QsortSurfaces
 
 =======================
 */
-static int R_QsortSurfaces( const void *a, const void *b ) {
-	drawSurf_t* ea = *( drawSurf_t ** )a;
-	drawSurf_t* eb = *( drawSurf_t ** )b;
+static bool R_StdSortSurfaces( const drawSurf_t *ea, const drawSurf_t *eb ) {
 
-	if ( ea->dsFlags & ea->dsFlags & DSF_SORT_DEPTH ) {
-		return ea->space->modelViewMatrix[14] - eb->space->modelViewMatrix[14];
-	}
-	if ( ea->sort < eb->sort ) {
-		return -1;
-	}
-	if ( ea->sort > eb->sort ) {
-		return 1;
-	}
+	// soft by "sort" value increasing
+	if ( ea->sort != eb->sort )
+		return ea->sort < eb->sort;
+
 	// sort by material to reduce texture state changes in depth stage
-	if ( ea->material != eb->material ) {
-		return ea->material - eb->material;
-	}
-	return ea->space - eb->space;
+	if (ea->material != eb->material)
+		return ea->material < eb->material;
+
+	// sort by entity parameters set
+	return ea->space < eb->space;
 }
 
 /*
@@ -1044,22 +1038,9 @@ static void R_SortDrawSurfs( void ) {
 
 	if ( !tr.viewDef->numDrawSurfs ) // otherwise an assert fails in debug builds
 		return;
-	// filter the offscreen shadow-only surfaces into a separate array
-	idList<drawSurf_t*> visible( tr.viewDef->numDrawSurfs ), offscreen( tr.viewDef->numDrawSurfs );
-	for ( int i = 0; i < tr.viewDef->numDrawSurfs; i++ ) {
-		auto surf = tr.viewDef->drawSurfs[i];
-		if ( surf->dsFlags & DSF_SHADOW_MAP_ONLY )
-			offscreen.Append( surf );
-		else
-			visible.Append( surf );
-	}
-	tr.viewDef->numDrawSurfs = visible.Num();
-	tr.viewDef->numOffscreenSurfs = offscreen.Num();
-	memcpy( tr.viewDef->drawSurfs, visible.Ptr(), visible.MemoryUsed() );
-	memcpy( &tr.viewDef->drawSurfs[tr.viewDef->numDrawSurfs], offscreen.Ptr(), offscreen.MemoryUsed() );
+	tr.viewDef->numOffscreenSurfs = 0;
 	// sort the drawsurfs by sort type, then orientation, then shader
-	qsort( tr.viewDef->drawSurfs, tr.viewDef->numDrawSurfs, sizeof( tr.viewDef->drawSurfs[0] ),
-		R_QsortSurfaces );
+	std::sort( tr.viewDef->drawSurfs, tr.viewDef->drawSurfs + tr.viewDef->numDrawSurfs, R_StdSortSurfaces );
 }
 
 //========================================================================
@@ -1120,6 +1101,9 @@ void R_RenderView( viewDef_t &parms ) {
 
 	// any viewLight that didn't have visible surfaces can have it's shadows removed
 	R_RemoveUnecessaryViewLights();
+
+	// assign pages of shadow map buffer to lights that use shadow maps
+	R_AssignShadowMapAtlasPages();
 
 	// sort all the ambient surfaces for translucency ordering
 	R_SortDrawSurfs();

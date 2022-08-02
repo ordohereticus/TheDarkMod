@@ -434,7 +434,6 @@ void idPlayerView::SingleView( idUserInterface *hud, const renderView_t *view, b
 	// place the sound origin for the player
 	// TODO: Support overriding the location area so that reverb settings can be applied for listening thru doors?
 	idVec3 p = player->GetPrimaryListenerLoc(); // grayman #4882
-	p *= METERS_TO_DOOM; // grayman #4882
 	gameSoundWorld->PlaceListener( p, view->viewaxis, player->entityNumber + 1, gameLocal.time, hud ? hud->State().GetString( "location" ) : "Undefined" ); // grayman #4882
 //	gameSoundWorld->PlaceListener(player->GetListenerLoc(), view->viewaxis, player->entityNumber + 1, gameLocal.time, hud ? hud->State().GetString("location") : "Undefined");
 
@@ -962,7 +961,7 @@ void idPlayerView::RenderPlayerView( idUserInterface *hud )
 		} else {*/
 
 		// greebo: For underwater effects, use the Doom3 Doubleview
-		if (static_cast<idPhysics_Player*>(player->GetPlayerPhysics())->GetWaterLevel() >= WATERLEVEL_HEAD)
+		if (player->GetPlayerPhysics()->GetWaterLevel() >= WATERLEVEL_HEAD)
 		{
 			DoubleVision(hud, view, cv_tdm_underwater_blur.GetInteger());
 		}

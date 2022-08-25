@@ -13,11 +13,24 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 ******************************************************************************/
 
-//returns eye Z coordinate with reversed sign (monotonically increasing with depth)
-//in other words, it is eye-fragment distance along view direction
+// transforms homogeneous 3D position according to MVP matrices (for vertex shaders)
+// note: you must use this exact code, otherwise you'll get depth fighting due to numeric differences!
+vec4 objectPosToClip(vec4 position, mat4 modelView, mat4 projection) {
+	return projection * (modelView * position);
+}
+
+// transforms 3D position from world space to object/model space using inverse model transform
+vec3 worldPosToObject(vec3 worldPosition, mat4 modelMatrix) {
+	return (worldPosition - vec3(modelMatrix[3])) * mat3(modelMatrix);
+}
+
+// returns eye Z coordinate with reversed sign (monotonically increasing with depth)
+// in other words, it is eye-fragment distance along view direction
 float depthToZ(mat4 projectionMatrix, float depth) {
 	float clipZ = 2.0 * depth - 1.0;
 	float A = projectionMatrix[2].z;
 	float B = projectionMatrix[3].z;
 	return B / (A + clipZ);
 }
+
+#define SOFT_SHADOWS_SAMPLES_COUNT 150

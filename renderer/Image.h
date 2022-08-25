@@ -208,7 +208,8 @@ public:
 	                               textureFilter_t filter, bool allowDownSize,
 	                               textureDepth_t depth );
 	void		GenerateAttachment( int width, int height, GLenum format,
-									GLenum filter = GL_LINEAR, GLenum wrapMode = GL_CLAMP_TO_EDGE );
+									GLenum filter = GL_LINEAR, GLenum wrapMode = GL_CLAMP_TO_EDGE,
+									int lodLevel = 0 );
 
 	void		UploadScratch( const byte *pic, int width, int height );
 
@@ -381,6 +382,7 @@ public:
 	idImage *			cinematicImage;
 	idImage *			scratchImage;
 	idImage *			scratchImage2;
+	idImage *			cameraImages[10];
 	idImage *			xrayImage;
 	idImage *			accumImage;
 	idImage *			currentRenderImage;			// for SS_POST_PROCESS shaders

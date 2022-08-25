@@ -183,7 +183,7 @@ extern idCVar cv_pm_mantle_pullFast_msecs;
 extern idCVar cv_pm_mantle_pushNonCrouched_playgrunt_speedthreshold;
 extern idCVar cv_pm_mantle_fallingFast_speedthreshold;
 extern idCVar cv_pm_mantle_cancel_speed;
-extern idCVar cv_pm_mantle_tilt_mod;
+extern idCVar cv_pm_mantle_roll_mod;
 
 extern idCVar cv_pm_ladderSlide_speedLimit;
 
@@ -197,6 +197,8 @@ extern idCVar cv_pm_water_downwards_velocity;
 extern idCVar cv_pm_water_z_friction;
 extern idCVar cv_pm_show_waterlevel;
 extern idCVar cv_pm_climb_distance;
+
+extern idCVar cv_pm_blackjack_indicate; // Obsttorte (#4289)
 
 /**
 * This cvar controls if ai hiding spot search debug graphics are drawn

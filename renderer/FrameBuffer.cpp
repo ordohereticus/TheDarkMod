@@ -154,13 +154,33 @@ void FrameBuffer::Bind() {
 }
 
 void FrameBuffer::BlitTo( FrameBuffer *target, GLbitfield mask, GLenum filter ) {
+	BlitToVidSize(target, mask, filter, 0, 0, glConfig.vidWidth, glConfig.vidHeight);
+}
+
+void FrameBuffer::BlitToVidSize(FrameBuffer *target, GLbitfield mask, GLenum filter, int x, int y, int w, int h) {
 	FrameBuffer *previous = frameBuffers->activeFbo;
 	Bind();
 	qglDisable(GL_SCISSOR_TEST);
+
 	target->BindDraw();
-	qglBlitFramebuffer(0, 0, width, height, 0, 0, target->width, target->height, mask, filter);
-	previous->Bind();
+
+	int xl = x, yl = y, xr = x + w, yr = y + h;
+	// note: avoid floats here!
+	// so that if we specify full screen, we don't accidentally skip last row/column
+	qglBlitFramebuffer(
+		xl * width  / glConfig.vidWidth ,
+		yl * height / glConfig.vidHeight,
+		xr * width  / glConfig.vidWidth ,
+		yr * height / glConfig.vidHeight,
+		xl * target->width  / glConfig.vidWidth ,
+		yl * target->height / glConfig.vidHeight,
+		xr * target->width  / glConfig.vidWidth ,
+		yr * target->height / glConfig.vidHeight,
+		mask, filter
+	);
+
 	qglEnable(GL_SCISSOR_TEST);
+	previous->Bind();
 }
 
 void FrameBuffer::CreateDefaultFrameBuffer(FrameBuffer *fbo) {
@@ -228,9 +248,10 @@ void FB_ApplyScissor() {
 	if ( r_useScissor.GetBool() ) {
 		GL_ScissorVidSize(
 			backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
-		    backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
-		    backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
-		    backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
+			backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
+			backEnd.currentScissor.GetWidth(),
+			backEnd.currentScissor.GetHeight()
+		);
 	}
 }
 
@@ -299,9 +320,14 @@ void GL_ScissorAbsolute( int x, int y, int w, int h ) {
 }
 
 void GL_ScissorVidSize( int x /* left*/, int y /* bottom */, int w, int h ) {
-	float xScale = static_cast<float>(frameBuffers->activeFbo->Width()) / glConfig.vidWidth;
-	float yScale = static_cast<float>(frameBuffers->activeFbo->Height()) / glConfig.vidHeight;
-	GL_ScissorAbsolute( x * xScale, y * yScale, w * xScale, h * yScale );
+	int width = frameBuffers->activeFbo->Width();
+	int height = frameBuffers->activeFbo->Height();
+	GL_ScissorAbsolute(
+		x * width  / glConfig.vidWidth ,
+		y * height / glConfig.vidHeight,
+		w * width  / glConfig.vidWidth ,
+		h * height / glConfig.vidHeight
+	);
 }
 
 void GL_ScissorRelative( float x, float y, float w, float h ) {
@@ -326,9 +352,14 @@ void GL_ViewportAbsolute( int x, int y, int w, int h ) {
 }
 
 void GL_ViewportVidSize( int x /* left */, int y /* bottom */, int w, int h ) {
-	float xScale = static_cast<float>(frameBuffers->activeFbo->Width()) / glConfig.vidWidth;
-	float yScale = static_cast<float>(frameBuffers->activeFbo->Height()) / glConfig.vidHeight;
-	GL_ViewportAbsolute( x * xScale, y * yScale, w * xScale, h * yScale );
+	int width = frameBuffers->activeFbo->Width();
+	int height = frameBuffers->activeFbo->Height();
+	GL_ViewportAbsolute(
+		x * width  / glConfig.vidWidth ,
+		y * height / glConfig.vidHeight,
+		w * width  / glConfig.vidWidth ,
+		h * height / glConfig.vidHeight
+	);
 }
 
 void GL_ViewportRelative( float x, float y, float w, float h ) {

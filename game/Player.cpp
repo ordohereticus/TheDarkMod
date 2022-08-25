@@ -1762,7 +1762,10 @@ void idPlayer::UpdateInventoryGridGUI()
 	const int pageSize = GetGuiInt(inventoryGridOverlay, "PageSize");
 	int currentPage = GetGuiInt(inventoryGridOverlay, "CurrentPage");
 	const int pageRequest = GetGuiInt(inventoryGridOverlay, "PageRequest");
-
+	// Obsttorte
+	const int userChoice = GetGuiInt(inventoryGridOverlay, "UserChoice");
+	const int selectedItem = (pageSize * currentPage) + userChoice;
+	common->Printf("%d", selectedItem);
 	// Handle request for prev/next pages.
 	if (pageRequest == 1 && (items.Num() - 1 >= pageSize * (currentPage + 1)))
 	{
@@ -1798,7 +1801,6 @@ void idPlayer::UpdateInventoryGridGUI()
 	
 	// Clear entries until we determine if they hold an item.
 	invgridGUI->HandleNamedEvent("clearGrid");
-	
 	// Update each inventory grid entry for current page.
 	for (int i = 0; i != pageSize; ++i)
 	{
@@ -1816,6 +1818,7 @@ void idPlayer::UpdateInventoryGridGUI()
 
 		// Get item.
 		CInventoryItemPtr item = items[itemIndex];
+
 
 		// Update grid entry for this item.
 		idStr itemName = common->Translate( item->GetName() );
@@ -4218,11 +4221,60 @@ void idPlayer::Weapon_Combat( void ) {
 			weapon.GetEntity()->EndBlock();
 		}
 	}
-
+	
 	// update our ammo clip in our inventory
 	if ( currentWeapon == idealWeapon ) {
 		UpdateHudAmmo();
 	}
+	// Obsttorte (#4289)
+	if (cvarSystem->GetCVarBool("tdm_blackjack_indicate") && weapon.GetEntity()->canKnockout())
+	{
+		trace_t tr;
+		idEntity* ent;
+		idVec3 start, end;
+		float meleeDistance = weapon.GetEntity()->getMeleeDistance();
+		float knockoutRange = weapon.GetEntity()->getKnockoutRange();
+		float KOBoxSize = weapon.GetEntity()->getKOBoxSize();
+		start = firstPersonViewOrigin;
+		end = start + firstPersonViewAxis[0] * meleeDistance;
+		idBounds bo;
+		bo.Zero();
+		bo.ExpandSelf(KOBoxSize);
+		gameLocal.clip.TraceBounds(tr, start, end, bo, MASK_SHOT_RENDERMODEL, this);
+		//gameRenderWorld->DebugArrow(colorBlue, start, end, 3, 1000);
+		//gameRenderWorld->DebugBounds(colorBlue, bo, tr.endpos, 1000);
+		/*
+		if (gameLocal.entities[tr.c.entityNum])
+		{
+			common->Printf("%s\n", gameLocal.entities[tr.c.entityNum]->GetName());
+		}
+		*/
+		if (tr.fraction < 1.0f && gameLocal.entities[tr.c.entityNum])
+		{
+			//ent = gameLocal.GetTraceEntity( tr );
+			ent = gameLocal.entities[tr.c.entityNum];
+			if (ent->GetBindMaster())
+			{
+				ent = ent->GetBindMaster();
+			}
+		}
+		else
+		{
+			ent = NULL;
+			weapon.GetEntity()->Indicate(false);
+		}
+		if (ent) {
+			if (ent->IsType(idAI::Type) && ((static_cast<idAI*>(ent)->GetEyePosition() - tr.endpos).Length() < knockoutRange) && static_cast<idAI*>(ent)->TestKnockoutBlow(this, idVec3('0'), &tr, static_cast<idAI*>(ent)->GetDamageLocation("head"), 0, false))
+			{
+				weapon.GetEntity()->Indicate(true);
+			}
+			else
+			{
+				weapon.GetEntity()->Indicate(false);
+			}
+		}
+	}
+	
 }
 
 /*
@@ -4483,7 +4535,8 @@ void idPlayer::OnStartShoulderingBody(idEntity* body)
 	m_bShoulderingBody = true;
 
 	// STiFU #3607: Trigger shouldering viewport animation
-	physicsObj.StartShouldering(body);
+    if (!noclip)
+	    physicsObj.StartShouldering(body);
 }
 
 void idPlayer::OnStopShoulderingBody(idEntity* body)

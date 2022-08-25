@@ -184,13 +184,7 @@ void RB_GLSL_DrawLight_Stencil() {
 	// clear the stencil buffer if needed
 	if ( backEnd.vLight->globalShadows || backEnd.vLight->localShadows ) {
 		backEnd.currentScissor = backEnd.vLight->scissorRect;
-
-		if ( r_useScissor.GetBool() ) {
-			GL_ScissorVidSize( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
-			            backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
-			            backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
-			            backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
-		}
+		FB_ApplyScissor();
 
 		if ( useShadowFbo ) {
 			frameBuffers->EnterShadowStencil();
@@ -205,6 +199,8 @@ void RB_GLSL_DrawLight_Stencil() {
 	if ( backEnd.vLight->globalShadows ) {
 		RB_StencilShadowPass( backEnd.vLight->globalShadows );
 		if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
+			backEnd.currentScissor = backEnd.vLight->scissorRect;
+			FB_ApplyScissor();
 			frameBuffers->ResolveShadowStencilAA();
 		}
 	}
@@ -226,6 +222,8 @@ void RB_GLSL_DrawLight_Stencil() {
 	if ( backEnd.vLight->localShadows ) {
 		RB_StencilShadowPass( backEnd.vLight->localShadows );
 		if ( useShadowFbo && r_multiSamples.GetInteger() > 1 && r_softShadowsQuality.GetInteger() >= 0 ) {
+			backEnd.currentScissor = backEnd.vLight->scissorRect;
+			FB_ApplyScissor();
 			frameBuffers->ResolveShadowStencilAA();
 		}
 	}
@@ -396,12 +394,11 @@ void RB_GLSL_DrawInteractions() {
 	if ( r_shadows.GetInteger() == 2 ) 
 		if ( r_shadowMapSinglePass.GetBool() )
 			RB_ShadowMap_RenderAllLights();
-	if ( r_shadows.GetInteger() != 1 )
-		if ( r_interactionProgram.GetInteger() == 2 ) {
-			extern void RB_GLSL_DrawInteractions_MultiLight();
-			RB_GLSL_DrawInteractions_MultiLight();
-			return;
-		}
+	if ( r_shadows.GetInteger() != 1 && r_shadowMapSinglePass.GetInteger() == 2 ) {
+		extern void RB_GLSL_DrawInteractions_MultiLight();
+		RB_GLSL_DrawInteractions_MultiLight();
+		return;
+	}
 
 	// for each light, perform adding and shadowing
 	for ( backEnd.vLight = backEnd.viewDef->viewLights; backEnd.vLight; backEnd.vLight = backEnd.vLight->next ) 
@@ -788,18 +785,12 @@ void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 
 	lightProjectionFalloff.Set( din->lightProjection[0].ToFloatPtr() );
 	lightTextureMatrix.SetArray( 2, din->lightTextureMatrix[0].ToFloatPtr() );
-	// set the constant color
+
+	globalLightOrigin.Set( backEnd.vLight->globalLightOrigin );
+	globalViewOrigin.Set( backEnd.viewDef->renderView.vieworg );
+	renderResolution.Set( frameBuffers->activeFbo->Width(), frameBuffers->activeFbo->Height() );
 	diffuseColor.Set( din->diffuseColor );
 	specularColor.Set( din->specularColor );
-	viewOrigin.Set( din->localViewOrigin );
-
-	if( ambient ) {
-		lightOrigin.Set( din->worldUpLocal.ToVec3() );
-		rimColor.Set( din->ambientRimColor );
-	} else {
-		lightOrigin.Set( din->localLightOrigin.ToVec3() );
-		lightOrigin2.Set( backEnd.vLight->globalLightOrigin );
-	}
 
 	// stgatilov #4825: make translation "lit tangentially" -> "unlit" smoother
 	// #5862 unless surface has "twosided" material
@@ -833,8 +824,6 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		ssaoEnabled.Set( ambientOcclusion->ShouldEnableForCurrentView() );
 		return;
 	}
-
-	advanced.Set( r_interactionProgram.GetFloat() );
 
 	auto vLight = backEnd.vLight;
 	bool doShadows = !vLight->noShadows && vLight->lightShader->LightCastsShadows(); 

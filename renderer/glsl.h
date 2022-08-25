@@ -115,16 +115,14 @@ namespace Uniforms {
 		DEFINE_UNIFORM( sampler, lightProjectionCubemap )
 		DEFINE_UNIFORM( sampler, lightFalloffTexture )
 		DEFINE_UNIFORM( sampler, lightFalloffCubemap )
-		DEFINE_UNIFORM( vec4, viewOrigin )
 
-		DEFINE_UNIFORM( vec3, lightOrigin )
-		DEFINE_UNIFORM( vec3, lightOrigin2 )
+		DEFINE_UNIFORM( vec3, globalLightOrigin )
+		DEFINE_UNIFORM( vec3, globalViewOrigin )
+		DEFINE_UNIFORM( vec2, renderResolution )
 
 		DEFINE_UNIFORM( float, minLevel )
 		DEFINE_UNIFORM( float, gamma )
-		DEFINE_UNIFORM( vec4, rimColor )
 
-		DEFINE_UNIFORM( float, advanced )
 		DEFINE_UNIFORM( int, shadows )
 		DEFINE_UNIFORM( int, shadowMapCullFront )
 		DEFINE_UNIFORM( vec4, shadowRect )
@@ -134,7 +132,6 @@ namespace Uniforms {
 		DEFINE_UNIFORM( int, shadowMap )
 		DEFINE_UNIFORM( sampler, depthTexture )
 		DEFINE_UNIFORM( sampler, stencilTexture )
-		DEFINE_UNIFORM( vec2, renderResolution )
 
 		DEFINE_UNIFORM( float, RGTC )
 		DEFINE_UNIFORM( vec3, hasTextureDNS )

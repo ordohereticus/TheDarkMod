@@ -37,7 +37,6 @@ struct ManyLightInteractionStage::ShaderParams {
 	idVec4 diffuseColor;
 	idVec4 specularColor;
 	idVec4 hasTextureDNS;
-	idVec4 ambientRimColor;
 	uint32_t lightMask;
 	uint32_t padding[3];
 };
@@ -45,6 +44,7 @@ struct ManyLightInteractionStage::ShaderParams {
 struct ManyLightInteractionStage::LightParams {
 	idVec4 scissor;
 	idVec4 globalLightOrigin;
+	idVec4 globalViewOrigin;
 	idVec4 shadowRect;
 	idVec4 color;
 	idMat4 projection;
@@ -63,7 +63,6 @@ struct ManyLightInteractionStage::DrawInteraction {
 
 	idVec4 diffuseColor;	// may have a light color baked into it, will be < tr.backEndRendererMaxLight
 	idVec4 specularColor;	// may have a light color baked into it, will be < tr.backEndRendererMaxLight
-	idVec4 ambientRimColor;
 	stageVertexColor_t vertexColor;	// applies to both diffuse and specular
 
 	idVec4 bumpMatrix[2];
@@ -231,7 +230,8 @@ void ManyLightInteractionStage::DrawInteractions( const viewDef_t *viewDef ) {
 			// FIXME shadowmap only valid when globalInteractions not empty, otherwise garbage
 			bool doShadows = !vLight->noShadows && lightShader->LightCastsShadows() && vLight->globalInteractions != nullptr;
 			params.shadows = doShadows;
-			params.globalLightOrigin = idVec4(vLight->globalLightOrigin.x, vLight->globalLightOrigin.y, vLight->globalLightOrigin.z, 1);
+			params.globalLightOrigin.Set(vLight->globalLightOrigin, 1);
+			params.globalViewOrigin.Set(backEnd.viewDef->renderView.vieworg, 1);
 			params.color.x = backEnd.lightScale * lightRegs[lightStage->color.registers[0]];
 			params.color.y = backEnd.lightScale * lightRegs[lightStage->color.registers[1]];
 			params.color.z = backEnd.lightScale * lightRegs[lightStage->color.registers[2]];
@@ -381,14 +381,6 @@ void ManyLightInteractionStage::ProcessSingleSurface( const drawSurf_t *surf ) {
 		return;
 	}
 
-	auto ambientRegs = material->GetAmbientRimColor().registers;
-	if ( ambientRegs[0] ) {
-		for ( int i = 0; i < 3; i++ )
-			inter.ambientRimColor[i] = surfaceRegs[ambientRegs[i]];
-		inter.ambientRimColor[3] = 1;
-	} else
-		inter.ambientRimColor.Zero();
-
 	inter.surf = surf;
 
 	inter.bumpImage = NULL;
@@ -524,7 +516,6 @@ void ManyLightInteractionStage::PrepareDrawCommand( DrawInteraction *din ) {
 	} else {
 		params.hasTextureDNS = idVec4(1, 1, 1, 0);
 	}
-	params.ambientRimColor = din->ambientRimColor;
 
 	params.lightMask = din->lightMask;
 

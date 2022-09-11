@@ -18,6 +18,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 #include "tr_local.h"
 #include "Model_local.h"
+#include "FrameBufferManager.h"
 
 #define CHECK_BOUNDS_EPSILON			1.0f
 
@@ -210,6 +211,8 @@ viewEntity_t *R_SetEntityDefViewEntity( idRenderEntityLocal *def ) {
 
 	// the scissorRect will be expanded as the model bounds is accepted into visible portal chains
 	vModel->scissorRect.Clear();
+	vModel->scissorRect.zmin = 0.0f;
+	vModel->scissorRect.zmax = 1.0f;
 
 	// copy the model and weapon depth hack for back-end use
 	vModel->modelDepthHack = def->parms.modelDepthHack;
@@ -293,6 +296,8 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 
 	// the scissorRect will be expanded as the light bounds is accepted into visible portal chains
 	vLight->scissorRect.Clear();
+	vLight->scissorRect.zmin = 0.0f;
+	vLight->scissorRect.zmax = 1.0f;
 
 	// calculate the shadow cap optimization states
 	vLight->viewInsideLight = R_TestPointInViewLight( tr.viewDef->renderView.vieworg, light );
@@ -308,6 +313,14 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 		// this should not be referenced in this case
 		vLight->viewSeesShadowPlaneBits = 63;
 	}
+
+	// find maximum distance from light origin to vertices of its light frustum
+	frustumCorners_t corners;
+	idRenderMatrix::GetFrustumCorners( corners, light->inverseBaseLightProject, bounds_zeroOneCube );
+	float lightFrustumRadius = 0.0f;
+	for ( int i = 0; i < NUM_FRUSTUM_CORNERS; i++ )
+		lightFrustumRadius = idMath::Fmax( lightFrustumRadius, ( idVec3( corners.x[i], corners.y[i], corners.z[i] ) - light->globalLightOrigin ).LengthSqr() );
+	vLight->maxLightDistance = idMath::Sqrt( lightFrustumRadius );
 
 	// see if the light center is in view, which will allow us to cull invisible shadows
 	vLight->viewSeesGlobalLightOrigin = R_PointInFrustum( light->globalLightOrigin, tr.viewDef->frustum, 4 );
@@ -756,7 +769,7 @@ idScreenRect R_CalcLightScissorRectangle( viewLight_t *vLight ) {
 		if ( tr.viewDef->viewFrustum.ProjectionBounds( idBox( lightDef->parms.origin, lightDef->parms.lightRadius, lightDef->parms.axis ), bounds ) )
 			r = R_ScreenRectFromViewFrustumBounds( bounds );
 		else
-			r.Clear();
+			r.ClearWithZ();
 		return r;
 	}
 
@@ -915,7 +928,7 @@ void R_AddLightSurfaces( void ) {
 			// which will be used to crop the stencil cull
 			idScreenRect scissorRect = R_CalcLightScissorRectangle( vLight );
 			// intersect with the portal crossing scissor rectangle
-			vLight->scissorRect.Intersect( scissorRect );
+			vLight->scissorRect.IntersectWithZ( scissorRect );
 
 			if ( r_showLightScissors.GetBool() ) {
 				R_ShowColoredScreenRect( vLight->scissorRect, light->index );
@@ -1463,19 +1476,14 @@ R_CalcEntityScissorRectangle
 ==================
 */
 idScreenRect R_CalcEntityScissorRectangle( viewEntity_t *vEntity ) {
+	idBounds bounds;
 	idRenderEntityLocal *def = vEntity->entityDef;
-	idBounds bounds = def->referenceBounds;
-
-	// duzenko: the dynamic model does not always fit the reference bounds
-	idRenderModel *model = R_EntityDefDynamicModel( def );
-	if ( model ) 
-		bounds = model->Bounds( &def->parms );
 
 	idScreenRect rect;
-	if ( tr.viewDef->viewFrustum.ProjectionBounds( idBox( bounds, def->parms.origin, def->parms.axis ), bounds ) )
+	if ( tr.viewDef->viewFrustum.ProjectionBounds( idBox( def->referenceBounds, def->parms.origin, def->parms.axis ), bounds ) )
 		rect = R_ScreenRectFromViewFrustumBounds( bounds );
 	else
-		rect.Clear();
+		rect.ClearWithZ();
 
 	return rect;
 }
@@ -1520,7 +1528,7 @@ void R_AddSingleModel( viewEntity_t *vEntity ) {
 		idScreenRect scissorRect = R_CalcEntityScissorRectangle( vEntity );
 
 		// intersect with the portal crossing scissor rectangle
-		vEntity->scissorRect.Intersect( scissorRect );
+		vEntity->scissorRect.IntersectWithZ( scissorRect );
 
 		if ( r_showEntityScissors.GetBool() && !r_useParallelAddModels.GetBool() ) {
 			R_ShowColoredScreenRect( vEntity->scissorRect, def.index );
@@ -1674,33 +1682,31 @@ void R_RemoveUnecessaryViewLights( void ) {
 		// This doesn't seem to actually help, perhaps because the surface scissor
 		// rects aren't actually the surface, but only the portal clippings.
 		for ( vLight = tr.viewDef->viewLights ; vLight ; vLight = vLight->next ) {
-			const drawSurf_t	*surf;
-			idScreenRect	surfRect;
-
-			if ( !vLight->lightShader->LightCastsShadows() ) {
+			if ( vLight->volumetricDust != 0.0f )
 				continue;
-			}
-			surfRect.Clear();
 
-			for ( surf = vLight->globalInteractions ; surf ; surf = surf->nextOnLight ) {
-				surfRect.Union( surf->scissorRect );
-			}
+			idScreenRect	surfRect;
+			surfRect.ClearWithZ();
 
-			for ( surf = vLight->localShadows ; surf ; surf = surf->nextOnLight ) {
-				const_cast<drawSurf_t *>(surf)->scissorRect.Intersect( surfRect );
+			for ( const drawSurf_t *surf = vLight->globalInteractions ; surf ; surf = surf->nextOnLight ) {
+				surfRect.UnionWithZ( surf->scissorRect );
 			}
-
-			for ( surf = vLight->localInteractions ; surf ; surf = surf->nextOnLight ) {
-				surfRect.Union( surf->scissorRect );
-			}
-			for ( surf = vLight->globalShadows ; surf ; surf = surf->nextOnLight ) {
-				const_cast<drawSurf_t *>(surf)->scissorRect.Intersect( surfRect );
+			for ( const drawSurf_t *surf = vLight->localInteractions ; surf ; surf = surf->nextOnLight ) {
+				surfRect.UnionWithZ( surf->scissorRect );
 			}
 
-			for ( surf = vLight->translucentInteractions ; surf ; surf = surf->nextOnLight ) {
-				surfRect.Union( surf->scissorRect );
+			for ( drawSurf_t *surf = vLight->localShadows ; surf ; surf = surf->nextOnLight ) {
+				surf->scissorRect.IntersectWithZ( surfRect );
 			}
-			vLight->scissorRect.Intersect( surfRect );
+			for ( drawSurf_t *surf = vLight->globalShadows ; surf ; surf = surf->nextOnLight ) {
+				surf->scissorRect.IntersectWithZ( surfRect );
+			}
+
+			for ( const drawSurf_t *surf = vLight->translucentInteractions ; surf ; surf = surf->nextOnLight ) {
+				surfRect.UnionWithZ( surf->scissorRect );
+			}
+
+			vLight->scissorRect.IntersectWithZ( surfRect );
 		}
 	}
 	// sort the viewLights list so the largest lights come first, which will reduce the chance of GPU pipeline bubbles
@@ -1715,23 +1721,139 @@ R_AssignShadowMapAtlasPages
 =====================
 */
 void R_AssignShadowMapAtlasPages( void ) {
-	int ShadowAtlasIndex = 0;
+	// ask how large atlas is
+	int numAtlasTiles, tileSize;
+	frameBuffers->GetShadowMapBudget( numAtlasTiles, tileSize );
 
-	// force lower precision for shadow maps in subviews
-	switch ( tr.viewDef->renderView.viewID ) {
-	case VID_LIGHTGEM:
-		ShadowAtlasIndex = 6;
-		break;
-	case VID_SUBVIEW:
-		ShadowAtlasIndex = 2;
-		break;
-	}
+	// resolutions are represented as fixed-point ratios of tile size
+	// so number X means resolution: floor(tileSize * X / TILE_RATIO)
+	static const int TILE_RATIO = (1 << 20);
+	// give at least this resolution to every light
+	// it theoretically allows:
+	//   1) 1024 lights rendered simultaneously
+	//   2) r_shadowMapSize can be reduced down to 32 x 32
+	static const int MIN_RATIO = TILE_RATIO / 32;
 
-	// assign shadow pages and prepare lights for single/multi processing
-	// singleLightOnly flag is now set in frontend
+	struct Candidate {
+		int ratio;				// resolution ratio
+		float distance;			// light origin - view origin distance
+		viewLight_t *vLight;
+	};
+	idList<Candidate> shadowMappers;
+
+	// collect shadow map users
 	for ( viewLight_t *vLight = tr.viewDef->viewLights; vLight; vLight = vLight->next ) {
 		if ( vLight->shadows == LS_MAPS ) {
-			vLight->shadowMapIndex = ++ShadowAtlasIndex;
+			// get unified bounding scissor for all shadow volumes
+			idScreenRect shadowsScissor;
+			shadowsScissor.ClearWithZ();
+			for ( drawSurf_t *surf = vLight->globalShadows; surf; surf = surf->nextOnLight )
+				shadowsScissor.UnionWithZ( surf->scissorRect );
+			for ( drawSurf_t *surf = vLight->localShadows; surf; surf = surf->nextOnLight )
+				shadowsScissor.UnionWithZ( surf->scissorRect );
+			// can't be larger than scissor of the whole light
+			// note: this scissor is already reduced to union of all interaction surfaces (see R_RemoveUnecessaryViewLights)
+			shadowsScissor.IntersectWithZ( vLight->scissorRect );
+
+			// get distance along view direction (from depth)
+			float stretch = 1e-10f;
+			if ( !shadowsScissor.IsEmpty() || shadowsScissor.zmin <= shadowsScissor.zmax ) {
+				float minViewDistance = tr.viewDef->projectionRenderMatrix.DepthToZ( shadowsScissor.zmin );
+				float lightFrustumRadius = vLight->maxLightDistance;
+				// this is rather approximate...
+				stretch = lightFrustumRadius / minViewDistance;
+			}
+
+			// stretch factor can easily be huge, e.g. when view origin is within light volume
+			// we need to put it into sane limits
+			float score = idMath::Fmin( stretch, 1.0f );
+			assert( score > 0.0f );
+			// get desired resolution ratio as power-of-two
+			int ratio = (int) idMath::Ceil( TILE_RATIO * score );
+			ratio = 1 << ( idMath::ILog2( ratio - 1 ) + 1 );
+
+			float distance = ( vLight->globalLightOrigin - tr.viewDef->renderView.vieworg ).Length();
+
+			shadowMappers.Append( { ratio, distance, vLight } );
 		}
 	}
+
+	if ( shadowMappers.Num() == 0 )
+		return;
+
+	// force lower precision for shadow maps in subviews & lightgem
+	int downscaleShift = 0;
+	if ( tr.viewDef->renderView.viewID == VID_LIGHTGEM )
+		downscaleShift = 2;		// 25 %
+	else if ( tr.viewDef->renderView.viewID == VID_SUBVIEW )
+		downscaleShift = 1;		// 50 %
+
+	// postprocess resolutions, estimate total budget needed
+	int64 maxTotalRatio = int64(numAtlasTiles) * TILE_RATIO * TILE_RATIO;
+	int64 totalRatio = 0;
+	for ( Candidate &c : shadowMappers ) {
+		c.ratio >>= downscaleShift;
+		c.ratio = idMath::Imax( c.ratio, MIN_RATIO );
+		totalRatio += int64(c.ratio) * c.ratio;
+	}
+
+	if ( totalRatio > maxTotalRatio ) {
+		// can't afford giving everyone as much resolution as they want
+
+		// sort candidate lights by distance
+		idList<Candidate*> sortedByDistance;
+		for ( Candidate &c : shadowMappers )
+			sortedByDistance.Append( &c );
+		std::sort( sortedByDistance.begin(), sortedByDistance.end(), [](Candidate *a, Candidate *b) -> bool {
+			return a->distance > b->distance;
+		} );
+
+		// downscale lights in round robin fashion, starting from the most distance ones
+		for ( int phase = 0; totalRatio > maxTotalRatio; phase++ ) {
+			bool hasReduced = false;
+
+			for ( Candidate *c : sortedByDistance ) {
+				int newRatio = idMath::Imax( c->ratio >> 1, MIN_RATIO );
+				if ( newRatio >= c->ratio )
+					continue;
+
+				hasReduced = true;
+				// update resolution and total sum
+				totalRatio -= int64(c->ratio) * c->ratio;
+				c->ratio = newRatio;
+				totalRatio += int64(c->ratio) * c->ratio;
+
+				if ( totalRatio <= maxTotalRatio )
+					break;
+			}
+
+			// none reduced -> every light already at min resolution
+			assert( hasReduced );
+			if ( !hasReduced )
+				break;
+		}
+
+		// now try to bump back some lights if possible
+		for ( Candidate *c : sortedByDistance ) {
+			int newRatio = idMath::Imin( c->ratio << 1, TILE_RATIO );
+			if ( newRatio <= c->ratio )
+				continue;
+
+			int64 newTotalRatio = totalRatio - int64(c->ratio) * c->ratio + int64(newRatio) * newRatio;
+			if ( newTotalRatio <= maxTotalRatio ) {
+				c->ratio = newRatio;
+				totalRatio = newTotalRatio;
+			}
+		}
+	}
+
+	// let framebuffer management assign pages inside texture
+	idList<int> ratios;
+	for ( Candidate &c : shadowMappers )
+		ratios.Append( c.ratio );
+
+	idList<renderCrop_t> pages = frameBuffers->CreateShadowMapPages( ratios, TILE_RATIO );
+
+	for ( int i = 0; i < pages.Num(); i++ )
+		shadowMappers[i].vLight->shadowMapPage = pages[i];
 }

@@ -385,11 +385,20 @@ public:
 
 	// Will return -1 if the point is not in an area, otherwise
 	// it will return 0 <= value < NumAreas()
-	virtual int				PointInArea( const idVec3 &point ) const = 0;
+	virtual int				GetAreaAtPoint( const idVec3 &point ) const = 0;
+
+	// stgatilov #6083: returns ANY point inside area with specified number
+	// it tries to find a point distant from area boundaries
+	//   return 0: success, good point found
+	//   return 1: failed to find good point, returned center of area's bounding box
+	//   return -1: can't even approximately locate the area! point zeroed
+	// warning: this function is very slow!
+	// used only for developer tool or "teleportArea"
+	virtual int				GetPointInArea( int areaNum, idVec3 &point ) const = 0;
 
 	// fills the *areas array with the numbers of the areas the bounds cover
 	// returns the total number of areas the bounds cover
-	virtual int				BoundsInAreas( const idBounds &bounds, int *areas, int maxAreas ) const = 0;
+	virtual int				FindAreasInBounds( const idBounds &bounds, int *areas, int maxAreas ) const = 0;
 
 	// Used by the sound system to do area flowing
 	virtual	int				NumPortalsInArea( int areaNum ) = 0;

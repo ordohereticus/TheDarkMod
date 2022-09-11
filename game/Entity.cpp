@@ -415,6 +415,8 @@ const idEventDef EV_GetCurInvItemId("getCurInvItemId", EventArgs(), 's',
 	"Returns the name of the currently highlighted inventory item (the one defined in \"inv_item_id\").\n" \
 	"Most items will return an empty string, unless the \"inv_item_id\" is set on purpose.");
 const idEventDef EV_GetCurInvIcon("getCurInvIcon", EventArgs(), 's', "Returns the icon of the currently highlighted inventory item.");
+const idEventDef EV_GetCurInvItemCount("getCurInvItemCount", EventArgs(), 'd',
+	"Returns the item count of the currently highlighted inventory Item, if stackable.Returns - 1 if non - stackable"); // Obsttorte #6096
 
 // greebo: "Private" event which runs right after spawn time to check the inventory-related spawnargs.
 const idEventDef EV_InitInventory("_initInventory", EventArgs('d', "", ""), EV_RETURNS_VOID, "Private event which runs right after spawn time to check the inventory-related spawnargs.");
@@ -651,6 +653,7 @@ ABSTRACT_DECLARATION( idClass, idEntity )
 	EVENT( EV_ChangeInvItemCount,	idEntity::ChangeInventoryItemCount )
 	EVENT( EV_ChangeInvLightgemModifier, idEntity::ChangeInventoryLightgemModifier )
 	EVENT( EV_ChangeInvIcon,		idEntity::ChangeInventoryIcon )
+	EVENT( EV_GetCurInvItemCount,	idEntity::Event_GetCurInvItemCount )
 	EVENT( EV_InitInventory,		idEntity::Event_InitInventory )
 
 	EVENT( EV_StimAdd,				idEntity::Event_StimAdd)
@@ -11208,7 +11211,16 @@ void idEntity::Event_GetCurInvIcon()
 	CInventoryItemPtr item = InventoryCursor()->GetCurrentItem();
 	idThread::ReturnString( item ? item->GetIcon() : "" );
 }
-
+// Obsttorte #6096
+void idEntity::Event_GetCurInvItemCount()
+{
+	CInventoryItemPtr item = InventoryCursor()->GetCurrentItem();
+	if (!item->IsStackable())
+	{
+		idThread::ReturnFloat(-1.0);
+	}
+	idThread::ReturnFloat(item->GetCount());
+}
 void idEntity::Event_InitInventory(int callCount)
 {
 	// grayman #2820 - At the time of this writing, this routine checks
@@ -11902,7 +11914,7 @@ void idEntity::Event_GetLightInPVS( const float lightFalloff, const float lightD
 	{
 		origin = GetPhysics()->GetOrigin();
 	}
-	int areaNum = gameRenderWorld->PointInArea( origin );
+	int areaNum = gameRenderWorld->GetAreaAtPoint( origin );
 
 	// Find all light entities, then check if they are in the same area as the player:
 	for( idEntity* ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() )
@@ -11918,7 +11930,7 @@ void idEntity::Event_GetLightInPVS( const float lightFalloff, const float lightD
 
 		// light is in the same area?
 		idVec3 light_origin = light->GetLightOrigin();
-		if ( areaNum == gameRenderWorld->PointInArea( light_origin ) ) {
+		if ( areaNum == gameRenderWorld->GetAreaAtPoint( light_origin ) ) {
 			light->GetColor( local_light );
 			// multiply the light color by the radius to get a fake "light energy":
 			light->GetRadius( local_light_radius );

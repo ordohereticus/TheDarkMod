@@ -32,6 +32,10 @@ FrameBuffer::~FrameBuffer() {
 	Destroy();
 }
 
+void FrameBuffer::SetGenerator( const Generator &generator ) {
+	this->generator = generator;
+}
+
 void FrameBuffer::Init( int width, int height, int msaa ) {
 	if (initialized) {
 		common->Warning("Trying to initialize already created framebuffer %s", name.c_str());
@@ -237,7 +241,6 @@ void FrameBuffer::AddRenderTexture( idImage *texture, GLenum attachment, int mip
 }
 
 
-renderCrop_t ShadowAtlasPages[42];
 idCVar r_fboResolution( "r_fboResolution", "1", CVAR_RENDERER | CVAR_FLOAT | CVAR_ARCHIVE, "internal rendering resolution factor" );
 
 void FB_RenderTexture(idImage *texture) {

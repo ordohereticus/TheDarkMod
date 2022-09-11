@@ -34,6 +34,7 @@ struct ShadowMapUniforms : GLSLUniformGroup {
 	UNIFORM_GROUP_DEF( ShadowMapUniforms )
 
 	DEFINE_UNIFORM( vec4, lightOrigin )
+	DEFINE_UNIFORM( float, maxLightDistance )
 	DEFINE_UNIFORM( float, alphaTest )
 	DEFINE_UNIFORM( mat4, modelMatrix )
 };
@@ -46,7 +47,7 @@ static void ChooseInteractionProgram() {
 	if ( backEnd.vLight->lightShader->IsAmbientLight() ) {
 		currrentInteractionShader = programManager->ambientInteractionShader;
 	} else {
-		if ( backEnd.vLight->shadowMapIndex )
+		if ( backEnd.vLight->shadowMapPage.width > 0 )
 			currrentInteractionShader = programManager->shadowMapInteractionShader;
 		else
 			currrentInteractionShader = programManager->stencilInteractionShader;
@@ -56,7 +57,7 @@ static void ChooseInteractionProgram() {
 }
 
 static void BindShadowTexture() {
-	if ( backEnd.vLight->shadowMapIndex ) {
+	if ( backEnd.vLight->shadowMapPage.width > 0 ) {
 		GL_SelectTexture( 6 );
 		globalImages->shadowAtlas->Bind();
 	} else {
@@ -178,9 +179,6 @@ void RB_GLSL_DrawLight_Stencil() {
 
 	bool useShadowFbo = r_softShadowsQuality.GetBool() && !backEnd.viewDef->IsLightGem();// && (r_shadows.GetInteger() != 2);
 
-	// set depth bounds for the whole light
-	const DepthBoundsTest depthBoundsTest( backEnd.vLight->scissorRect );
-
 	// clear the stencil buffer if needed
 	if ( backEnd.vLight->globalShadows || backEnd.vLight->localShadows ) {
 		backEnd.currentScissor = backEnd.vLight->scissorRect;
@@ -250,8 +248,6 @@ RB_GLSL_CreateDrawInteractions
 =============
 */
 void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = false ) {
-	if ( backEnd.vLight->shadowMapIndex > 42 )
-		return;
 	TRACE_GL_SCOPE( "GLSL_DrawInteractions_ShadowMap" );
 
 	GL_CheckErrors();
@@ -267,6 +263,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	lightOrigin.z = backEnd.vLight->globalLightOrigin.z;
 	lightOrigin.w = 0;
 	shadowMapUniforms->lightOrigin.Set( lightOrigin );
+	shadowMapUniforms->maxLightDistance.Set( backEnd.vLight->maxLightDistance );
 	shadowMapUniforms->alphaTest.Set( -1 );
 	backEnd.currentSpace = NULL;
 
@@ -274,13 +271,13 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 	qglPolygonOffset( 0, 0 );
 	qglEnable( GL_POLYGON_OFFSET_FILL );
 
-	auto &page = ShadowAtlasPages[backEnd.vLight->shadowMapIndex-1];
+	const renderCrop_t &page = backEnd.vLight->shadowMapPage;
 	qglViewport( page.x, page.y, 6*page.width, page.width );
 	if ( r_useScissor.GetBool() )
 		qglScissor( page.x, page.y, 6*page.width, page.width );
 	if ( clear )
 		qglClear( GL_DEPTH_BUFFER_BIT );
-	for ( int i = 0; i < 4; i++ )
+	for ( int i = 0; i < 5; i++ )
 		qglEnable( GL_CLIP_DISTANCE0 + i );
 	for ( ; surf; surf = surf->nextOnLight ) {
 		/*float customOffset = surf->space->entityDef->parms.shadowMapOffset + surf->material->GetShadowMapOffset();
@@ -300,7 +297,7 @@ void RB_GLSL_DrawInteractions_ShadowMap( const drawSurf_t *surf, bool clear = fa
 		/*if ( customOffset != 0 )
 			qglPolygonOffset( 0, 0 );*/
 	}
-	for ( int i = 0; i < 4; i++ )
+	for ( int i = 0; i < 5; i++ )
 		qglDisable( GL_CLIP_DISTANCE0 + i );
 
 	qglDisable( GL_POLYGON_OFFSET_FILL );
@@ -318,7 +315,7 @@ void RB_GLSL_GenerateShadowMaps() {
 	if ( r_shadows.GetBool() == 0 )
 		return;
 	for ( backEnd.vLight = backEnd.viewDef->viewLights; backEnd.vLight; backEnd.vLight = backEnd.vLight->next ) {
-		if ( !backEnd.vLight->shadowMapIndex || backEnd.vLight->singleLightOnly )
+		if ( backEnd.vLight->shadowMapPage.width == 0 || backEnd.vLight->singleLightOnly )
 			continue;
 		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->globalInteractions, true );
 		RB_GLSL_DrawInteractions_ShadowMap( backEnd.vLight->localInteractions, false );
@@ -801,12 +798,12 @@ void Uniforms::Interaction::SetForInteraction( const drawInteraction_t *din ) {
 
 void Uniforms::Interaction::SetForShadows( bool translucent ) {
 	if ( backEnd.vLight->lightShader->IsCubicLight() ) {
-		cubic.Set( 1.f );
+		cubic.Set( true );
 		lightProjectionTexture.Set( MAX_MULTITEXTURE_UNITS );
 		lightProjectionCubemap.Set( 2 );
 		lightFalloffTexture.Set( MAX_MULTITEXTURE_UNITS );
 	} else {
-		cubic.Set( 0.f );
+		cubic.Set( false );
 		lightProjectionTexture.Set( 2 );
 		lightProjectionCubemap.Set( MAX_MULTITEXTURE_UNITS + 1 );
 		lightFalloffTexture.Set( 1 );
@@ -816,9 +813,11 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		minLevel.Set( backEnd.viewDef->IsLightGem() ? 0 : r_ambientMinLevel.GetFloat() );
 		gamma.Set( backEnd.viewDef->IsLightGem() ? 1 : r_ambientGamma.GetFloat() );
 		if ( backEnd.vLight->lightShader->IsCubicLight() ) {
-			lightFalloffCubemap.Set( 1 );
+			lightDiffuseCubemap.Set( 8 );
+			lightSpecularCubemap.Set( 9 );
 		} else {
-			lightFalloffCubemap.Set( MAX_MULTITEXTURE_UNITS + 1 );
+			lightDiffuseCubemap.Set( MAX_MULTITEXTURE_UNITS + 1 );
+			lightSpecularCubemap.Set( MAX_MULTITEXTURE_UNITS + 1 );
 		}
 		ssaoTexture.Set( 6 );
 		ssaoEnabled.Set( ambientOcclusion->ShouldEnableForCurrentView() );
@@ -833,7 +832,7 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 	}
 	if ( doShadows ) {
 		shadows.Set( vLight->shadows );
-		auto &page = ShadowAtlasPages[vLight->shadowMapIndex-1];
+		const renderCrop_t &page = vLight->shadowMapPage;
 		if ( 0 ) { // select the pixels to TexCoords method for interactionA.fs
 			idVec4 v( page.x, page.y, 0, page.width );
 			v /= 6 * r_shadowMapSize.GetFloat();
@@ -863,7 +862,7 @@ void Uniforms::Interaction::SetForShadows( bool translucent ) {
 		softShadowsQuality.Set( 0 );
 	}
 	softShadowsRadius.Set( GetEffectiveLightRadius() ); // for soft stencil and all shadow maps
-	if ( vLight->shadowMapIndex ) {
+	if ( vLight->shadowMapPage.width > 0 ) {
 		shadowMap.Set( 6 );
 		depthTexture.Set( MAX_MULTITEXTURE_UNITS );
 		stencilTexture.Set( MAX_MULTITEXTURE_UNITS + 2 );

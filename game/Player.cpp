@@ -4227,16 +4227,17 @@ void idPlayer::Weapon_Combat( void ) {
 		UpdateHudAmmo();
 	}
 	// Obsttorte (#4289)
-	if (cvarSystem->GetCVarBool("tdm_blackjack_indicate") && weapon.GetEntity()->canKnockout())
+	if (!(usercmd.buttons & BUTTON_ATTACK) && cvarSystem->GetCVarBool("tdm_blackjack_indicate") && weapon.GetEntity()->canKnockout())
 	{
 		trace_t tr;
 		idEntity* ent;
-		idVec3 start, end;
+		idVec3 start, end, dir;
 		float meleeDistance = weapon.GetEntity()->getMeleeDistance();
 		float knockoutRange = weapon.GetEntity()->getKnockoutRange();
 		float KOBoxSize = weapon.GetEntity()->getKOBoxSize();
 		start = firstPersonViewOrigin;
 		end = start + firstPersonViewAxis[0] * meleeDistance;
+		dir = -1.0 * firstPersonViewAxis[0];
 		idBounds bo;
 		bo.Zero();
 		bo.ExpandSelf(KOBoxSize);
@@ -4264,7 +4265,7 @@ void idPlayer::Weapon_Combat( void ) {
 			weapon.GetEntity()->Indicate(false);
 		}
 		if (ent) {
-			if (ent->IsType(idAI::Type) && ((static_cast<idAI*>(ent)->GetEyePosition() - tr.endpos).Length() < knockoutRange) && static_cast<idAI*>(ent)->TestKnockoutBlow(this, idVec3('0'), &tr, static_cast<idAI*>(ent)->GetDamageLocation("head"), 0, false))
+			if (ent->IsType(idAI::Type) && ((static_cast<idAI*>(ent)->GetEyePosition() - tr.endpos).Length() < knockoutRange) && static_cast<idAI*>(ent)->TestKnockoutBlow(this, idVec3(), &tr, static_cast<idAI*>(ent)->GetDamageLocation("head"), 0, false))
 			{
 				weapon.GetEntity()->Indicate(true);
 			}
@@ -5106,22 +5107,12 @@ void idPlayer::UpdateViewAngles( void )
 	}
 
 	// clamp the pitch
-	if ( noclip ) {
-		if ( TestAngles.pitch > 89.0f ) {
-			// don't let the player look down more than 89 degrees while noclipping
-			TestAngles.pitch = 89.0f;
-		} else if ( TestAngles.pitch < -89.0f ) {
-			// don't let the player look up more than 89 degrees while noclipping
-			TestAngles.pitch = -89.0f;
-		}
-	} else {
-		if ( TestAngles.pitch > pm_maxviewpitch.GetFloat() ) {
-			// don't let the player look down enough to see the shadow of his (non-existant) feet
-			TestAngles.pitch = pm_maxviewpitch.GetFloat();
-		} else if ( TestAngles.pitch < pm_minviewpitch.GetFloat() ) {
-			// don't let the player look up more than 89 degrees
-			TestAngles.pitch = pm_minviewpitch.GetFloat();
-		}
+	if ( TestAngles.pitch > pm_maxviewpitch.GetFloat() ) {
+		// don't let the player look down enough to see the shadow of his (non-existant) feet
+		TestAngles.pitch = pm_maxviewpitch.GetFloat();
+	} else if ( TestAngles.pitch < pm_minviewpitch.GetFloat() ) {
+		// don't let the player look up more than 89 degrees
+		TestAngles.pitch = pm_minviewpitch.GetFloat();
 	}
 
 	// TDM: Check for collisions due to delta yaw when leaning, overwrite test angles to avoid
@@ -5373,7 +5364,7 @@ void idPlayer::UpdateAir( void )
 				areaNum = pvsAreas[0];
 			} else
 			{
-				areaNum = gameRenderWorld->PointInArea( this->GetPhysics()->GetOrigin() );
+				areaNum = gameRenderWorld->GetAreaAtPoint( this->GetPhysics()->GetOrigin() );
 			}
 			newAirless = gameRenderWorld->AreasAreConnected( gameLocal.vacuumAreaNum, areaNum, PS_BLOCK_AIR );
 			DM_LOG(LC_STATE, LT_DEBUG)LOGSTRING("UpdateAir: Bordering on neighbor area. VacuumArea: %d, NeighborArea: %d, Airless: %d", gameLocal.vacuumAreaNum, areaNum, newAirless);
@@ -7108,6 +7099,7 @@ void idPlayer::UpdateInventoryHUD()
 	// Now take the correct action based on the selected type
 	switch (curItem->GetType())
 	{
+		SetGuiString(m_InventoryOverlay, "Inventory_ItemId", curItem->GetItemId()); // Obsttorte #6096
 		case CInventoryItem::IT_ITEM:
 		{
 			// We display the default hud if the item doesn't have its own. Each item

@@ -3109,7 +3109,7 @@ void idSessionLocal::DrawFrame() {
 	tr.guiModel->Clear();
 	// add the swapbuffers command
 	emptyCommand_t *cmd = (emptyCommand_t *)R_GetCommandBuffer( sizeof( *cmd ) );
-	cmd->commandId = RC_SWAP_BUFFERS;
+	cmd->commandId = RC_TONEMAP;
 }
 
 /*
@@ -3125,7 +3125,7 @@ void idSessionLocal::FrontendThreadFunction() {
 
 	while( true ) {
 		// stgatilov #4550: update FPU props (e.g. NaN exceptions)
-		sys->ThreadHeartbeat();
+		sys->ThreadHeartbeat( "Frontend" );
 
 		{ // lock scope
 			TRACE_CPU_SCOPE_COLOR( "Frontend::Wait", TRACE_COLOR_IDLE )
@@ -3215,7 +3215,6 @@ void idSessionLocal::StartFrontendThread() {
 	frontendActive = shutdownFrontend = false;
 	auto func = []( void *x ) -> unsigned int {
 		idSessionLocal* s = (idSessionLocal*)x;
-		TRACE_THREAD_NAME( "Frontend" )
 		s->FrontendThreadFunction();
 		return 0; 
 	};

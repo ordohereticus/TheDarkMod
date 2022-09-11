@@ -32,6 +32,10 @@ const float FOG_ENTER = ( FOG_ENTER_SIZE + 1.0f ) / ( FOG_ENTER_SIZE * 2 );
 // picky to get the bilerp correct at terminator
 
 
+typedef struct {
+	int		x, y, width, height;	// these are in physical, OpenGL Y-at-bottom pixels
+} renderCrop_t;
+
 // idScreenRect gets carried around with each drawSurf, so it makes sense
 // to keep it compact, instead of just using the idBounds class
 class idScreenRect {
@@ -40,10 +44,13 @@ public:
 	float       zmin, zmax;								// for depth bounds test
 
 	void		Clear();								// clear to backwards values
+	void		ClearWithZ();
 	void		AddPoint( float x, float y );			// adds a point
 	void		Expand();								// expand by one pixel each way to fix roundoffs
 	void		Intersect( const idScreenRect &rect );
+	void		IntersectWithZ( const idScreenRect &rect );
 	void		Union( const idScreenRect &rect );
+	void		UnionWithZ( const idScreenRect &rect );
 	bool		Equals( const idScreenRect& rect ) const {
 		return ( x1 == rect.x1 && x2 == rect.x2 && y1 == rect.y1 && y2 == rect.y2 );
 	}
@@ -61,6 +68,7 @@ public:
 		return !noOverlap;
 	}
 	bool		IsEmpty() const;
+	bool		IsEmptyWithZ() const;
 	int			GetArea() const { //anon
 		return GetWidth() * GetHeight();
 	}
@@ -75,6 +83,7 @@ public:
 
 idScreenRect R_ScreenRectFromViewFrustumBounds( const idBounds &bounds );
 void R_ShowColoredScreenRect( const idScreenRect &rect, int colorIndex );
+
 
 typedef enum {
 	DC_BAD,
@@ -373,7 +382,8 @@ typedef struct viewLight_s {
 	// projection planes that the view is on the negative side of will be set,
 	// allowing us to skip drawing the projected caps of shadows if we can't see the face
 	int						viewSeesShadowPlaneBits;
-	int						shadowMapIndex;				// zero - shadow maps not used, positive - shadow page index +1
+	renderCrop_t			shadowMapPage;
+	float					maxLightDistance;			// maximum distance from light origin to light volume points
 
 	bool					noFogBoundary;				// Stops fogs drawing and fogging their bounding boxes -- SteveL #3664
 	bool					singleLightOnly;			// multi-light shader can't handle it
@@ -560,8 +570,7 @@ typedef enum {
 	RC_SET_BUFFER,
 	RC_COPY_RENDER,
 	RC_BLOOM,
-	RC_SWAP_BUFFERS		// can't just assume swap at end of list because
-	// of forced list submission before syncs
+	RC_TONEMAP
 } renderCommand_t;
 
 struct baseCommand_t {
@@ -767,9 +776,6 @@ typedef struct {
 const int MAX_GUI_SURFACES	= 1024;		// default size of the drawSurfs list for guis, will
 // be automatically expanded as needed
 
-typedef struct {
-	int		x, y, width, height;	// these are in physical, OpenGL Y-at-bottom pixels
-} renderCrop_t;
 static const int	MAX_RENDER_CROPS = 8;
 
 /*
@@ -1301,7 +1307,8 @@ void R_PointTimesMatrix( const float modelMatrix[16], const idVec4 &in, idVec4 &
 void R_LocalPointToGlobal( const float modelMatrix[16], const idVec3 &in, idVec3 &out );
 void R_LocalVectorToGlobal( const float modelMatrix[16], const idVec3 &in, idVec3 &out );
 void R_LocalPlaneToGlobal( const float modelMatrix[16], const idPlane &in, idPlane &out );
-void R_TransformEyeZToWin( float src_z, const float *projectionMatrix, float &dst_z );
+void R_TransformEyeZToDepth( float src_z, const float *projectionMatrix, float &dst_depth );
+void R_TransformDepthToEyeZ( float src_depth, const float *projectionMatrix, float &dst_z );
 
 void R_GlobalToNormalizedDeviceCoordinates( const idVec3 &global, idVec3 &ndc );
 
@@ -1723,6 +1730,7 @@ void RB_SetGL2D( void );
 void RB_ShowImages( void );
 
 void RB_ExecuteBackEndCommands( const emptyCommand_t *cmds );
+void RB_SwapBuffers();
 
 
 /*

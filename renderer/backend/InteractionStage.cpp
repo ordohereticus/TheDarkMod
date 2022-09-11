@@ -54,7 +54,8 @@ namespace {
 		DEFINE_UNIFORM( sampler, lightProjectionTexture )
 		DEFINE_UNIFORM( sampler, lightProjectionCubemap )
 		DEFINE_UNIFORM( sampler, lightFalloffTexture )
-		DEFINE_UNIFORM( sampler, lightFalloffCubemap )
+		DEFINE_UNIFORM( sampler, lightDiffuseCubemap )
+		DEFINE_UNIFORM( sampler, lightSpecularCubemap )
 		DEFINE_UNIFORM( sampler, ssaoTexture )
 		DEFINE_UNIFORM( vec3, globalViewOrigin )
 		DEFINE_UNIFORM( vec3, globalLightOrigin )
@@ -73,6 +74,9 @@ namespace {
 		DEFINE_UNIFORM( sampler, stencilTexture )
 		DEFINE_UNIFORM( sampler, depthTexture )
 		DEFINE_UNIFORM( sampler, shadowMap )
+		DEFINE_UNIFORM( ivec2, stencilMipmapsLevel )
+		DEFINE_UNIFORM( vec4, stencilMipmapsScissor )
+		DEFINE_UNIFORM( sampler, stencilMipmapsTexture )
 	};
 
 	enum TextureUnits {
@@ -82,11 +86,13 @@ namespace {
 		TU_LIGHT_PROJECT = 3,
 		TU_LIGHT_PROJECT_CUBE = 4,
 		TU_LIGHT_FALLOFF = 5,
-		TU_LIGHT_FALLOFF_CUBE = 6,
-		TU_SSAO = 7,
-		TU_SHADOW_MAP = 8,
-		TU_SHADOW_DEPTH = 9,
-		TU_SHADOW_STENCIL = 10,
+		TU_LIGHT_DIFFUSE_CUBE = 6,
+		TU_LIGHT_SPECULAR_CUBE = 7,
+		TU_SSAO = 8,
+		TU_SHADOW_MAP = 9,
+		TU_SHADOW_DEPTH = 10,
+		TU_SHADOW_STENCIL = 11,
+		TU_SHADOW_STENCIL_MIPMAPS = 12,
 	};
 }
 
@@ -97,10 +103,12 @@ void InteractionStage::LoadInteractionShader( GLSLProgram *shader, const idStr &
 	InteractionUniforms *uniforms = shader->GetUniformGroup<InteractionUniforms>();
 	uniforms->lightProjectionCubemap.Set( TU_LIGHT_PROJECT_CUBE );
 	uniforms->lightProjectionTexture.Set( TU_LIGHT_PROJECT );
-	uniforms->lightFalloffCubemap.Set( TU_LIGHT_FALLOFF_CUBE );
 	uniforms->lightFalloffTexture.Set( TU_LIGHT_FALLOFF );
+	uniforms->lightDiffuseCubemap.Set( TU_LIGHT_DIFFUSE_CUBE );
+	uniforms->lightSpecularCubemap.Set( TU_LIGHT_SPECULAR_CUBE );
 	uniforms->ssaoTexture.Set( TU_SSAO );
 	uniforms->stencilTexture.Set( TU_SHADOW_STENCIL );
+	uniforms->stencilMipmapsTexture.Set( TU_SHADOW_STENCIL_MIPMAPS );
 	uniforms->depthTexture.Set( TU_SHADOW_DEPTH );
 	uniforms->shadowMap.Set( TU_SHADOW_MAP );
 	uniforms->normalTexture.Set( TU_NORMAL );
@@ -137,7 +145,7 @@ void InteractionStage::Shutdown() {
 	poissonSamples.ClearFree();
 }
 
-void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *interactionSurfs ) {
+void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *interactionSurfs, const TiledCustomMipmapStage *stencilShadowMipmaps ) {
 	if ( !interactionSurfs ) {
 		return;
 	}
@@ -183,14 +191,41 @@ void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *
 		return a->material < b->material;
 	} );
 
-	GL_SelectTexture( vLight->lightShader->IsCubicLight() ? TU_LIGHT_FALLOFF_CUBE : TU_LIGHT_FALLOFF );
-	vLight->falloffImage->Bind();
+	if ( vLight->lightShader->IsCubicLight() ) {
+		if ( vLight->lightShader->IsAmbientLight() ) {
+			GL_SelectTexture( TU_LIGHT_SPECULAR_CUBE );
+			vLight->falloffImage->Bind();	// TODO: proper location?
+		}
+	}
+	else {
+		GL_SelectTexture( TU_LIGHT_FALLOFF );
+		vLight->falloffImage->Bind();
+	}
 
 	if ( r_softShadowsQuality.GetBool() && !backEnd.viewDef->IsLightGem() || vLight->shadows == LS_MAPS )
-		BindShadowTexture();
+		BindShadowTexture( stencilShadowMipmaps );
 
 	if( vLight->lightShader->IsAmbientLight() && ambientOcclusion->ShouldEnableForCurrentView() ) {
 		ambientOcclusion->BindSSAOTexture( TU_SSAO );
+	}
+
+	if ( stencilShadowMipmaps && stencilShadowMipmaps->IsFilled() ) {
+		GL_SelectTexture( TU_SHADOW_STENCIL_MIPMAPS );
+		stencilShadowMipmaps->BindMipmapTexture();
+		// note: correct level is evaluated when mipmaps object is created
+		int useLevel = stencilShadowMipmaps->GetMaxLevel();
+		int baseLevel = stencilShadowMipmaps->GetBaseLevel();
+		idScreenRect scissor = stencilShadowMipmaps->GetScissorAtLevel( useLevel );
+		uniforms->stencilMipmapsLevel.Set( useLevel, baseLevel );
+		uniforms->stencilMipmapsScissor.Set(
+			(scissor.x1 + 0.5f) * (1 << useLevel),
+			(scissor.y1 + 0.5f) * (1 << useLevel),
+			(scissor.x2 + 0.5f) * (1 << useLevel),
+			(scissor.y2 + 0.5f) * (1 << useLevel)
+		);
+	}
+	else {
+		uniforms->stencilMipmapsLevel.Set( -1, -1 );
 	}
 
 	const idMaterial	*lightShader = vLight->lightShader;
@@ -203,8 +238,22 @@ void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *
 			continue;
 		}
 
-		GL_SelectTexture( vLight->lightShader->IsCubicLight() ? TU_LIGHT_PROJECT_CUBE : TU_LIGHT_PROJECT );
-		lightStage->texture.image->Bind();
+		if ( vLight->lightShader->IsCubicLight() ) {
+			if ( vLight->lightShader->IsAmbientLight() ) {
+				GL_SelectTexture( TU_LIGHT_DIFFUSE_CUBE );
+				lightStage->texture.image->Bind();	// TODO: proper location?
+				GL_SelectTexture( TU_LIGHT_PROJECT_CUBE );
+				globalImages->whiteCubeMapImage->Bind();
+			}
+			else {
+				GL_SelectTexture( TU_LIGHT_PROJECT_CUBE );
+				lightStage->texture.image->Bind();
+			}
+		}
+		else {
+			GL_SelectTexture( TU_LIGHT_PROJECT );
+			lightStage->texture.image->Bind();
+		}
 		// careful - making bindless textures resident could bind an arbitrary texture to the currently active
 		// slot, so reset this to something that is safe to override in bindless mode!
 		GL_SelectTexture(TU_NORMAL);
@@ -245,8 +294,8 @@ void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *
 	GLSLProgram::Deactivate();
 }
 
-void InteractionStage::BindShadowTexture() {
-	if ( backEnd.vLight->shadowMapIndex ) {
+void InteractionStage::BindShadowTexture( const TiledCustomMipmapStage *stencilShadowMipmaps ) {
+	if ( backEnd.vLight->shadowMapPage.width > 0 ) {
 		GL_SelectTexture( TU_SHADOW_MAP );
 		globalImages->shadowAtlas->Bind();
 	} else {
@@ -265,7 +314,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 		interactionShader = ambientInteractionShader;
 		Uniforms::Interaction *uniforms = interactionShader->GetUniformGroup<Uniforms::Interaction>();
 		uniforms->ambient = true;
-	} else if ( vLight->shadowMapIndex ) {
+	} else if ( vLight->shadowMapPage.width > 0 ) {
 		interactionShader = shadowMapInteractionShader;
 	} else {
 		interactionShader = stencilInteractionShader;
@@ -284,7 +333,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 	}
 	if ( doShadows ) {
 		uniforms->shadows.Set( vLight->shadows );
-		auto &page = ShadowAtlasPages[vLight->shadowMapIndex-1];
+		const renderCrop_t &page = vLight->shadowMapPage;
 		// https://stackoverflow.com/questions/5879403/opengl-texture-coordinates-in-pixel-space
 		idVec4 v( page.x, page.y, 0, page.width-1 );
 		v.ToVec2() = (v.ToVec2() * 2 + idVec2( 1, 1 )) / (2 * 6 * r_shadowMapSize.GetInteger());

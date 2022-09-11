@@ -16,6 +16,11 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "precompiled.h"
 #include "Tracing.h"
 
+// stgatilov: if you update Tracy and this header is missing in new artefacts
+// then you need to implement proper way of querying the version of Tracy
+// see this issue: https://github.com/wolfpld/tracy/issues/449
+#include <common/TracyVersion.hpp>
+
 idCVar r_useDebugGroups( "r_useDebugGroups", "1", CVAR_RENDERER | CVAR_BOOL, "Emit GL debug groups during rendering. Useful for frame debugging and analysis with e.g. nSight, which will group render calls accordingly." );
 idCVar com_enableTracing( "com_enableTracing", "0", CVAR_SYSTEM|CVAR_INTEGER, "Enable the tracy profiler. If set to 2, will stall until the Tracy Profiler app is connected" );
 idCVar com_tracingAllocStacks( "com_tracingAllocStacks", "0", CVAR_SYSTEM|CVAR_BOOL, "Collect call stacks for all memory allocations (wastes time)" );
@@ -36,10 +41,18 @@ void GL_SetDebugLabel(void *ptr, const idStr &label ) {
 }
 
 void InitTracing() {
-#ifdef TRACY_ENABLE
 	if ( !g_tracingEnabled && com_enableTracing.GetBool() ) {
+#ifdef TRACY_ENABLE
 		tracy::StartupProfiler();
 		g_tracingEnabled = true;
+
+		// print used version of Tracy so that people know which TracyViewer to download
+		common->Printf(
+			"Use Tracy viewer of version %d.%d.%d\n",
+			int( tracy::Version::Major ),
+			int( tracy::Version::Minor ),
+			int( tracy::Version::Patch )
+		);
 
 		if ( com_enableTracing.GetInteger() == 2 ) {
 			// wait until Tracy Profiler app is connected
@@ -47,9 +60,13 @@ void InitTracing() {
 				Sys_Yield();
 			}
 		}
+#else
+		common->Printf("Tracy profiling not included in this build\n");
+		common->Printf("Note that Tracy does not work in Debug configurations\n");
+		g_tracingEnabled = true;
+#endif
 	}
 	g_tracingAllocStacks = com_tracingAllocStacks.GetBool();
-#endif
 }
 
 void InitOpenGLTracing() {
@@ -67,9 +84,9 @@ void InitOpenGLTracing() {
 }
 
 void TracingEndFrame() {
-#ifdef TRACY_ENABLE
 	InitTracing();
 
+#ifdef TRACY_ENABLE
 	if ( g_tracingEnabled ) {
 		if ( !g_glTraceInitialized ) {
 			TracyGpuContext;

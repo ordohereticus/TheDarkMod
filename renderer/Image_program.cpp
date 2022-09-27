@@ -638,87 +638,19 @@ CUBE MAPS
 ===================================================================
 */
 
-
-static idMat3 cubeAxis[6];
-
-void InitCubeAxis() {
-	if ( cubeAxis[0][0][0] == 1 ) {
-		return;
-	}
-	cubeAxis[0][0][0] = 1;
-	cubeAxis[0][1][2] = -1;
-	cubeAxis[0][2][1] = -1;
-
-	cubeAxis[1][0][0] = -1;
-	cubeAxis[1][1][2] = 1;
-	cubeAxis[1][2][1] = -1;
-
-	cubeAxis[2][0][1] = 1;
-	cubeAxis[2][1][0] = 1;
-	cubeAxis[2][2][2] = 1;
-
-	cubeAxis[3][0][1] = -1;
-	cubeAxis[3][1][0] = 1;
-	cubeAxis[3][2][2] = -1;
-
-	cubeAxis[4][0][2] = 1;
-	cubeAxis[4][1][0] = 1;
-	cubeAxis[4][2][1] = -1;
-
-	cubeAxis[5][0][2] = -1;
-	cubeAxis[5][1][0] = -1;
-	cubeAxis[5][2][1] = -1;
-}
-
-/*
-==================
-R_SampleCubeMap
-==================
-*/
-void R_SampleCubeMap( const idVec3 &dir, int size, byte *buffers[6], byte result[4] ) {
-	idVec3 adir;
-	adir[0] = idMath::Fabs( dir[0] );
-	adir[1] = idMath::Fabs( dir[1] );
-	adir[2] = idMath::Fabs( dir[2] );
-
-	// select component with maximum absolute value
-	float amax = adir.Max();
-	int axis;
-	if ( adir[0] == amax )
-		axis = 0;
-	else if ( adir[1] == amax )
-		axis = 1;
-	else
-		axis = 2;
-	// look if direction aong it is positive or negative
-	float localZ = dir[axis];
-	axis = axis * 2 + ( localZ < 0.0f );
-
-	// compute texcoords on the chosen face
-	float invZ = idMath::InvSqrt( idMath::Fabs( localZ ) );
-	float fx = ( dir * cubeAxis[axis][1] ) * invZ;
-	float fy = ( dir * cubeAxis[axis][2] ) * invZ;
-	fx = 0.5f * ( fx + 1.0f );
-	fy = 0.5f * ( fy + 1.0f );
-
-	// convert to texels
-	int x = int( size * fx );
-	int y = int( size * fy );
-	x = idMath::ClampInt( 0, size - 1, x );
-	y = idMath::ClampInt( 0, size - 1, y );
-
-	memcpy( result, &buffers[axis][( y * size + x ) * 4], 4 );
-}
-
 /*
 =======================
 R_MakeAmbientMap
 =======================
 */
 void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
-	InitCubeAxis();
-
 	TRACE_CPU_SCOPE( "R_MakeAmbientMap" )
+
+	// set up cubemap sampler for source image
+	imageBlock_t srcImage;
+	srcImage.sides = 6;
+	srcImage.width = srcImage.height = param.size;
+	memcpy(srcImage.pic, param.buffers, 6 * sizeof(byte*));
 
 	// For each axis direction (surface normal for diffuse, reflected direction for specular),
 	// we compute 2D integral over spherical coordinates:
@@ -738,30 +670,52 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 	int resAlp = int( idMath::Sqrt( samples ) * 0.5f );
 	int resPhi = int( idMath::Sqrt( samples ) * 2.0f );
 
-	// precompute sin/cos of angles for better performance
-	idList<idVec2> alpCosSin, phiCosSin;
-	alpCosSin.SetNum(resAlp);
-	for ( int segAlp = 0; segAlp < resAlp; segAlp++ ) {
-		float alp = ( segAlp + 0.5f ) * ( idMath::HALF_PI / resAlp );
-		idMath::SinCos( alp, alpCosSin[segAlp].y, alpCosSin[segAlp].x );
-	}
-	phiCosSin.SetNum(resPhi);
-	for ( int segPhi = 0; segPhi < resPhi; segPhi++ ) {
-		float phi = ( segPhi + 0.5f ) * ( idMath::TWO_PI / resPhi );
-		idMath::SinCos( phi, phiCosSin[segPhi].y, phiCosSin[segPhi].x );
-	}
 	// dAlpha dPhi / Q
 	const float dAlpPhiQ = ( idMath::HALF_PI / resAlp / resPhi );
 
-	for ( int y = 0; y < param.outSize; y++ ) {
-		for ( int x = 0; x < param.outSize; x++ ) {
+	// I experimented with box filter postprocessing
+	// but in the end decided to not use it
+	static const int MARGIN = 0;
+	idList<idVec3> rawPixels;
+	int rawSize = param.outSize + 2 * MARGIN;
+	rawPixels.SetNum(rawSize * rawSize);
+
+	// 4x4 Bayer matrix for dithering
+	static const int BAYER_SIZE = 4;
+	static const int BAYER_QUOT = 16;
+	static const float BAYER_SCALE = 1.0f / BAYER_QUOT;
+	static const int BAYER_MATRIX[BAYER_SIZE][BAYER_SIZE] = {
+		{0, 8, 2, 10},
+		{12, 4, 14, 6},
+		{3, 11, 1, 9},
+		{15, 7, 13, 5}
+	};
+
+	// precompute sin/cos of angles for better performance
+	idList<idVec2> alpCosSin, phiCosSin;
+	alpCosSin.SetNum(resAlp * BAYER_QUOT);
+	for ( int segAlp = 0; segAlp < alpCosSin.Num(); segAlp++ ) {
+		float alp = ( segAlp + 0.5f ) * ( idMath::HALF_PI / alpCosSin.Num() );
+		idMath::SinCos( alp, alpCosSin[segAlp].y, alpCosSin[segAlp].x );
+	}
+	phiCosSin.SetNum(resPhi * BAYER_QUOT);
+	for ( int segPhi = 0; segPhi < phiCosSin.Num(); segPhi++ ) {
+		float phi = ( segPhi + 0.5f ) * ( idMath::TWO_PI / phiCosSin.Num() );
+		idMath::SinCos( phi, phiCosSin[segPhi].y, phiCosSin[segPhi].x );
+	}
+
+	idBounds colorRange;
+	colorRange.Clear();
+
+	for ( int y = -MARGIN; y < param.outSize + MARGIN; y++ ) {
+		for ( int x = -MARGIN; x < param.outSize + MARGIN; x++ ) {
 			float ratioX = ( x + 0.5f ) / param.outSize;
 			float ratioY = ( y + 0.5f ) / param.outSize;
 			// axis direction precomputed in this cubemap texel
 			idVec3 axisZ = (
-				cubeAxis[param.side][0] + 
-				cubeAxis[param.side][1] * ( 2.0f * ratioX - 1.0f ) +
-				cubeAxis[param.side][2] * ( 2.0f * ratioY - 1.0f )
+				cubeMapAxes[param.side][2] + 
+				cubeMapAxes[param.side][0] * ( 2.0f * ratioX - 1.0f ) +
+				cubeMapAxes[param.side][1] * ( 2.0f * ratioY - 1.0f )
 			);
 			axisZ.Normalize();
 
@@ -774,11 +728,26 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 
 			for ( int segAlp = 0; segAlp < resAlp; segAlp++ ) {
 				for ( int segPhi = 0; segPhi < resPhi; segPhi++ ) {
+#if 0
+					// slow way of evaluating angles
+					float ditherAlp = BAYER_MATRIX[segAlp & 3][segPhi & 3] * BAYER_SCALE;
+					float ditherPhi = BAYER_MATRIX[segPhi & 3][segAlp & 3] * BAYER_SCALE;
+					float alp = ( segAlp + ditherAlp ) / resAlp * idMath::HALF_PI;
+					float phi = ( segPhi + ditherPhi ) / resPhi * idMath::TWO_PI;
+					float cosAlp, sinAlp;
+					float cosPhi, sinPhi;
+					idMath::SinCos( alp, sinAlp, cosAlp );
+					idMath::SinCos( phi, sinPhi, cosPhi );
+#else
+					// fast equivalent: use precomputed cos/sin
+					int idxAlp = segAlp * BAYER_QUOT + BAYER_MATRIX[segAlp & 3][segPhi & 3];
+					int idxPhi = segPhi * BAYER_QUOT + BAYER_MATRIX[segPhi & 3][segAlp & 3];
+					float cosAlp = alpCosSin[idxAlp].x;
+					float sinAlp = alpCosSin[idxAlp].y;
+					float cosPhi = phiCosSin[idxPhi].x;
+					float sinPhi = phiCosSin[idxPhi].y;
+#endif
 					// convert to direction in world system
-					float cosAlp = alpCosSin[segAlp].x;
-					float sinAlp = alpCosSin[segAlp].y;
-					float cosPhi = phiCosSin[segPhi].x;
-					float sinPhi = phiCosSin[segPhi].y;
 					idVec3 testDir = (
 						axisZ * cosAlp + 
 						axisX * (sinAlp * cosPhi) + 
@@ -786,8 +755,7 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 					);
 
 					// fetch light at sample direction
-					byte result[4];
-					R_SampleCubeMap( testDir, param.size, param.buffers, result );
+					idVec4 result = srcImage.SampleCube( testDir, TF_LINEAR );
 
 					// accumulate integral
 					float pwr = cosAlp;
@@ -812,12 +780,33 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 			result *= ( param.cosPower + 1.0f ) * param.multiplier;
 
 			// store result in image
-			byte *pixel = param.outBuffer + ( y * param.outSize + x ) * 4;
-			pixel[0] = idMath::ClampInt( 0, 255, int( result[0] ) );
-			pixel[1] = idMath::ClampInt( 0, 255, int( result[1] ) );
-			pixel[2] = idMath::ClampInt( 0, 255, int( result[2] ) );
-			pixel[3] = 255;
+			idVec3 &pixel = rawPixels[ (y + MARGIN) * rawSize + (x + MARGIN) ];
+			pixel = result;
 		}
+	}
+
+	// copy results into output
+	for ( int y = 0; y < param.outSize; y++ )
+		for ( int x = 0; x < param.outSize; x++ ) {
+			byte *dstPixel = param.outBuffer + ( y * param.outSize + x ) * 4;
+			idVec3 srcPixel = rawPixels[ (y + MARGIN) * rawSize + (x + MARGIN) ];
+
+			// back to [0..255] range
+			srcPixel *= 255.0f;
+			// collect stats about highest levels
+			colorRange.AddPoint( srcPixel );
+
+			dstPixel[0] = idMath::ClampInt( 0, 255, int( srcPixel[0] ) );
+			dstPixel[1] = idMath::ClampInt( 0, 255, int( srcPixel[1] ) );
+			dstPixel[2] = idMath::ClampInt( 0, 255, int( srcPixel[2] ) );
+			dstPixel[3] = 255;
+		}
+
+	// update external bounds (note: guard by mutex!)
+	static idSysMutex colorRangeUpdateMutex;
+	if ( param.colorRange ) {
+		idScopedCriticalSection lock( colorRangeUpdateMutex );
+		param.colorRange->AddBounds( colorRange );
 	}
 }
 
@@ -828,9 +817,16 @@ REGISTER_PARALLEL_JOB( R_MakeAmbientMap, "R_MakeAmbientMap_SingleFace" );
 R_MakeAmbientMaps
 =======================
 */
-void R_MakeAmbientMaps( byte *buffers[6], byte *outBuffers[6], int outSize, int samples, int size, float multiplier, int cosPower ) {
+void R_MakeAmbientMaps( byte *buffers[6], byte *outBuffers[6], int outSize, int samples, int size, float multiplier, int cosPower, const char *name ) {
 	TRACE_CPU_SCOPE_FORMAT( "R_MakeAmbientMaps", "size %d <- %d, smp %d, pwr %d", outSize, size, samples, cosPower );
-	idParallelJobList *jobs = parallelJobManager->AllocJobList( JOBLIST_UTILITY, JOBLIST_PRIORITY_MEDIUM, 6, 0, nullptr );
+
+	// stgatilov: D3BFG job system does not support nested parallelism
+	// in such case it simply hangs =(
+	// and spawning 6 threads for this little work is useless too
+	//idParallelJobList *jobs = parallelJobManager->AllocJobList( JOBLIST_UTILITY, JOBLIST_PRIORITY_MEDIUM, 6, 0, nullptr );
+
+	idBounds colorRange;
+	colorRange.Clear();
 
 	MakeAmbientMapParam params[6];
 	for ( int i = 0; i < 6; i++ ) {
@@ -843,13 +839,26 @@ void R_MakeAmbientMaps( byte *buffers[6], byte *outBuffers[6], int outSize, int 
 		p.multiplier = multiplier;
 		p.cosPower = cosPower;
 		p.side = i;
-		jobs->AddJob( (jobRun_t)R_MakeAmbientMap, &p );
+		p.colorRange = &colorRange;
+
+		//jobs->AddJob( (jobRun_t)R_MakeAmbientMap, &p );
+		R_MakeAmbientMap( p );
 	}
 
-	jobs->Submit( nullptr, JOBLIST_PARALLELISM_MAX_CORES );
-	jobs->Wait();
+	//jobs->Submit( nullptr, JOBLIST_PARALLELISM_MAX_CORES );
+	//jobs->Wait();
+	
+	// check if color rangewas clamped
+	float maxMax = colorRange[1].Max();
+	if ( maxMax > 260.0f ) {
+		// note: I'm sure mapper should know about it, but I don't know how to report it properly...
+		common->Warning(
+			"%s: max color is (%0.0f %0.0f %0.0f) --- clamped to 255",
+			(name ? name : "[unknown]"), colorRange[1][0], colorRange[1][1], colorRange[1][2]
+		);
+	}
 
-	parallelJobManager->FreeJobList( jobs );
+	//parallelJobManager->FreeJobList( jobs );
 }
 
 /*
@@ -857,7 +866,7 @@ void R_MakeAmbientMaps( byte *buffers[6], byte *outBuffers[6], int outSize, int 
 R_BakeAmbientDiffuse
 =======================
 */
-void R_BakeAmbient( byte *pics[6], int *size, float multiplier, bool specular ) {
+void R_BakeAmbient( byte *pics[6], int *size, float multiplier, bool specular, const char *name ) {
 	if ( *size == 0 ) {
 		return;
 	}
@@ -872,7 +881,7 @@ void R_BakeAmbient( byte *pics[6], int *size, float multiplier, bool specular ) 
 		outPics[side] = ( byte * )R_StaticAlloc( 4 * outSize * outSize );
 	}
 
-	R_MakeAmbientMaps( pics, outPics, outSize, 256, *size, multiplier, cosPower );
+	R_MakeAmbientMaps( pics, outPics, outSize, 256, *size, multiplier, cosPower, name );
 
 	for ( int side = 0; side < 6; side++ ) {
 		R_StaticFree( pics[side] );
@@ -916,7 +925,7 @@ static bool R_ParseImageProgramCubeMap_r( idLexer &src, cubeFiles_t extensions, 
 
 		// process it
 		if ( pics ) {
-			R_BakeAmbient( pics, size, multiplier, specular );
+			R_BakeAmbient( pics, size, multiplier, specular, src.GetDisplayFileName() );
 			/*// DEBUG OUTPUT..
 			for ( int i = 0; i < 6; i++ )
 				R_WriteTGA( va("ad%d.tga", i ), pics[i], *size, *size );*/

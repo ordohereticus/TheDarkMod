@@ -68,16 +68,16 @@ Collision model
 typedef struct cm_vertex_s {
 	idVec3					p;					// vertex point
 	int						checkcount;			// for multi-check avoidance
-    unsigned int			side;				// each bit tells at which side this vertex passes one of the trace model edges
-    unsigned int			sideSet;			// each bit tells if sidedness for the trace model edge has been calculated yet
+	uint64					side;				// each bit tells at which side this vertex passes one of the trace model edges
+	uint64					sideSet;			// each bit tells if sidedness for the trace model edge has been calculated yet
 } cm_vertex_t;
 
 typedef struct cm_edge_s {
 	int						checkcount;			// for multi-check avoidance
 	unsigned short			internal;			// a trace model can never collide with internal edges
 	unsigned short			numUsers;			// number of polygons using this edge
-    unsigned int			side;				// each bit tells at which side of this edge one of the trace model vertices passes
-    unsigned int			sideSet;			// each bit tells if sidedness for the trace model vertex has been calculated yet
+	uint64					side;				// each bit tells at which side of this edge one of the trace model vertices passes
+	uint64					sideSet;			// each bit tells if sidedness for the trace model vertex has been calculated yet
 	int						vertexNum[2];		// start and end point of edge
 	idVec3					normal;				// edge normal
 } cm_edge_t;
@@ -214,7 +214,7 @@ typedef struct cm_trmPolygon_s {
 	int used;
 	idPlane plane;									// polygon plane
 	int numEdges;									// number of edges
-	int edges[MAX_TRACEMODEL_POLYEDGES];			// index into cm_traceWork_t->edges
+	int firstEdge;									// start location in cm_traceWork_t::edgeUses
 	idBounds rotationBounds;						// rotation bounds for this polygon
 } cm_trmPolygon_t;
 
@@ -223,6 +223,8 @@ typedef struct cm_traceWork_s {
 	cm_trmVertex_t vertices[MAX_TRACEMODEL_VERTS];	// trm vertices
 	int numEdges;
 	cm_trmEdge_t edges[MAX_TRACEMODEL_EDGES+1];		// trm edges
+	int numEdgeUses;
+	int edgeUses[MAX_TRACEMODEL_EDGES*2];			// tdm edgeuses (index into edges)
 	int numPolys;
 	cm_trmPolygon_t polys[MAX_TRACEMODEL_POLYS];	// trm polygons
 	cm_model_t *model;								// model colliding with

@@ -638,6 +638,18 @@ CUBE MAPS
 ===================================================================
 */
 
+struct MakeAmbientMapParam {
+	byte **buffers;
+	byte *outBuffer;
+	int outSize;
+	int samples;
+	int size;
+	float multiplier;
+	int cosPower;
+	int side;
+	idBounds *colorRange = nullptr;
+};
+
 /*
 =======================
 R_MakeAmbientMap
@@ -665,6 +677,8 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 	//   Q = integral( dS ) = integral( sin(alpha) dAlpha dPhi ) = 2 pi
 	// 
 	// Note that if color == 1, then the average = 1 / (s + 1)
+	// That's maximum that we can achieve with light density limit = 1.
+	// To achieve maximum value = 1, we need to concentrate all light at a single point (aka delta function image)
 
 	int samples = idMath::Imax( param.samples, 16 );
 	int resAlp = int( idMath::Sqrt( samples ) * 0.5f );
@@ -706,6 +720,7 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 
 	idBounds colorRange;
 	colorRange.Clear();
+	idRandom rnd;
 
 	for ( int y = -MARGIN; y < param.outSize + MARGIN; y++ ) {
 		for ( int x = -MARGIN; x < param.outSize + MARGIN; x++ ) {
@@ -721,7 +736,14 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 
 			// we need local coordinate system
 			idVec3 axisX, axisY;
-			axisZ.NormalVectors( axisX, axisY );
+			do {
+				axisX.x = rnd.CRandomFloat();
+				axisX.y = rnd.CRandomFloat();
+				axisX.z = rnd.CRandomFloat();
+				axisX = axisX - (axisZ * axisX) * axisZ;
+			} while (axisX.Length() < 0.5f);
+			axisX.Normalize();
+			axisY = axisZ.Cross(axisX);
 
 			idVec3 totalColor = idVec3( 0.0f );
 			float totalCoeff = 0.0f;
@@ -773,11 +795,8 @@ void R_MakeAmbientMap( const MakeAmbientMapParam &param ) {
 			// it's what we'll get for color == 1 constant environment
 
 			idVec3 result( totalColor[0], totalColor[1], totalColor[2] );
-			// now that we have average irradiance, we multiply it by:
-			//   1. (s + 1) --- in order to normalize output to range [0..1]
-			//   2. artist-controlled multiplier
-			// ideally, one should remember about 2/5 normalization when consuming the texture
-			result *= ( param.cosPower + 1.0f ) * param.multiplier;
+			// now that we have average irradiance, we multiply it by artist-controlled multiplier
+			result *= param.multiplier;
 
 			// store result in image
 			idVec3 &pixel = rawPixels[ (y + MARGIN) * rawSize + (x + MARGIN) ];
@@ -863,7 +882,7 @@ void R_MakeAmbientMaps( byte *buffers[6], byte *outBuffers[6], int outSize, int 
 
 /*
 =======================
-R_BakeAmbientDiffuse
+R_BakeAmbient
 =======================
 */
 void R_BakeAmbient( byte *pics[6], int *size, float multiplier, bool specular, const char *name ) {
@@ -875,13 +894,24 @@ void R_BakeAmbient( byte *pics[6], int *size, float multiplier, bool specular, c
 	// note: should match specular power of NdotR in Phong shader
 	int cosPower = ( specular ? 4 : 1 );
 
+	int inSize = *size;
+	while ( inSize > idMath::Imax( outSize + 4, outSize * 3/2 ) ) {
+		// downscale input cubemap to the resolution of output cubemap
+		for ( int f = 0; f < 6; f++ ) {
+			byte *newPic = R_MipMap( pics[f], inSize, inSize );
+			R_StaticFree(pics[f]);
+			pics[f] = newPic;
+		}
+		inSize >>= 1;
+	}
+
 	byte *outPics[6] = { nullptr };
 	// assume cubemaps are RGBA
 	for ( int side = 0; side < 6; side++ ) {
 		outPics[side] = ( byte * )R_StaticAlloc( 4 * outSize * outSize );
 	}
 
-	R_MakeAmbientMaps( pics, outPics, outSize, 256, *size, multiplier, cosPower, name );
+	R_MakeAmbientMaps( pics, outPics, outSize, 256, inSize, multiplier, cosPower, name );
 
 	for ( int side = 0; side < 6; side++ ) {
 		R_StaticFree( pics[side] );

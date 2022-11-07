@@ -1618,6 +1618,12 @@
     <ClInclude Include="tools\compilers\dmap\tjunctionfixer.h">
       <Filter>Tools\Compilers\DMap</Filter>
     </ClInclude>
+    <ClInclude Include="renderer\Model_obj.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="renderer\VolumetricStage.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cm\CollisionModel_contacts.cpp">
@@ -3579,6 +3585,12 @@
     </ClCompile>
     <ClCompile Include="tools\compilers\dmap\tjunctionfixer.cpp">
       <Filter>Tools\Compilers\DMap</Filter>
+    </ClCompile>
+    <ClCompile Include="renderer\Model_obj.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="renderer\VolumetricStage.cpp">
+      <Filter>Renderer</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

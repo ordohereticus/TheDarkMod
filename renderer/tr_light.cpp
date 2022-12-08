@@ -63,7 +63,6 @@ This is used only for a specific light
 ==================
 */
 void R_CreatePrivateShadowCache( srfTriangles_t *tri ) {
-
 	if ( vertexCache.CacheIsCurrent( tri->shadowCache ) ) {
 		return;
 	}
@@ -80,6 +79,9 @@ takes care of projecting the verts to infinity.
 */
 void R_CreateVertexProgramShadowCache( srfTriangles_t *tri ) {
 	if ( !tri->verts ) {
+		return;
+	}
+	if ( vertexCache.CacheIsCurrent( tri->shadowCache ) ) {
 		return;
 	}
 	shadowCache_t *temp = (shadowCache_t *)_alloca16( tri->numVerts * 2 * sizeof( shadowCache_t ) );
@@ -266,9 +268,18 @@ static bool R_PointInFrustum( idVec3 &p, idPlane *planes, int numPlanes ) {
 	return true;
 }
 
+idCVar r_volumetricEnable(
+	"r_volumetricEnable", "1", CVAR_BOOL | CVAR_RENDERER | CVAR_ARCHIVE,
+	"If set to 0, then all volumetric lights are disabled. "
+);
 idCVar r_volumetricForceShadowMaps(
-	"r_volumetricForceShadowMaps", "1", CVAR_BOOL | CVAR_RENDERER,
+	"r_volumetricForceShadowMaps", "1", CVAR_BOOL | CVAR_RENDERER | CVAR_ARCHIVE,
 	"If volumetrics need shadows, then switch the light to shadow maps even if stencil shadows are preferred in general. "
+);
+idCVar r_volumetricDustMultiplier(
+	"r_volumetricDustMultiplier", "1", CVAR_ARCHIVE | CVAR_FLOAT | CVAR_RENDERER,
+	"Multiplier applied to volumetric dust parameter (makes volumetrics stronger/weaker). ",
+	0.001f, 100.0f
 );
 
 /*
@@ -367,7 +378,11 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	light->shadows = vLight->shadows;
 
 	// stgatilov #5816: copy volumetric dust settings, resolve noshadows behavior
-	vLight->volumetricDust = light->parms.volumetricDust;
+	vLight->volumetricDust = light->parms.volumetricDust * r_volumetricDustMultiplier.GetFloat();
+	if ( !r_volumetricEnable.GetBool() ) {
+		// debug cvar says to remove volumetrics
+		vLight->volumetricDust = 0.0f;
+	}
 	vLight->volumetricNoshadows = false;
 	if ( vLight->lightShader->IsFogLight() ) {
 		// no shadows in fog
@@ -375,7 +390,7 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	}
 	else {
 		if ( light->parms.volumetricNoshadows == 0 && vLight->shadows != LS_MAPS || r_volumetricSamples.GetInteger() <= 0 ) {
-			if ( vLight->volumetricDust > 0.0f && r_volumetricForceShadowMaps.GetBool() ) {
+			if ( vLight->volumetricDust > 0.0f && r_volumetricForceShadowMaps.GetBool() && !tooBigForShadowMaps ) {
 				// force shadow maps implementation
 				// ATTENTION: modifies "shadows" member, which is normally defined earlier in this function
 				light->shadows = vLight->shadows = LS_MAPS;
@@ -391,6 +406,13 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 			vLight->volumetricNoshadows = true;
 		}
 	}
+	if ( tr.viewDef->isSubview ) {
+		// does not work in subviews, at least because currentDepth is not up-to-date
+		// note: somehow, the engine does not like different shadows implementation in main view and lightgem,
+		// so I placed this condition AFTER shadows implementation is chosen
+		vLight->volumetricDust = 0.0f;
+	}
+
 
 	// multi-light shader stuff
 	if ( shader->LightCastsShadows() && tooBigForShadowMaps ) // use stencil shadows

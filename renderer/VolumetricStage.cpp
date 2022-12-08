@@ -27,7 +27,7 @@ VolumetricStage volumetricImpl;
 VolumetricStage *volumetric = &volumetricImpl;
 
 idCVar r_volumetricSamples(
-	"r_volumetricSamples", "8", CVAR_ARCHIVE | CVAR_INTEGER | CVAR_RENDERER,
+	"r_volumetricSamples", "24", CVAR_ARCHIVE | CVAR_INTEGER | CVAR_RENDERER,
 	"How many samples to compute at every pixel of a volumetric light. "
 	"Higher values improve quality but severely degrade performance. "
 	"Zero value means using average color of projection/falloff textures and no shadows (very cheap).",
@@ -66,8 +66,10 @@ void VolumetricStage::Init() {
 			int scaleLevel = r_volumetricLowres.GetInteger();
 			int fboWidth = frameBuffers->renderWidth >> scaleLevel;
 			int fboHeight = frameBuffers->renderHeight >> scaleLevel;
-			// we need at least RGB since sometimes raymarching goes through light's projection texture
-			workImage[p]->GenerateAttachment( fboWidth, fboHeight, GL_RGBA8, GL_LINEAR );
+			// projection image can be multicolored, so we need RGB
+			// we don't need alpha, since we can premultiply on it
+			// we use floats to avoid color banding at low values and capping at 1
+			workImage[p]->GenerateAttachment( fboWidth, fboHeight, GL_R11F_G11F_B10F, GL_LINEAR );
 			fbo->Init( fboWidth, fboHeight );
 			workFBO[p]->AddColorRenderTexture( 0, workImage[p] );
 		});
@@ -127,10 +129,6 @@ bool VolumetricStage::RenderLight(const viewDef_t *viewDef, const viewLight_t *v
 		// ran out of vertex cache memory => skip it
 		return false;
 	}
-	if ( viewDef->isSubview ) {
-		// does not work in subviews, at least because currentDepth is not up-to-date
-		return false;
-	}
 
 	if ( r_volumetricLowres.IsModified() ) {
 		Shutdown();
@@ -157,7 +155,8 @@ bool VolumetricStage::RenderLight(const viewDef_t *viewDef, const viewLight_t *v
 		SetScissor();
 		qglClearColor( 0, 0, 0, 0 );
 		qglClear( GL_COLOR_BUFFER_BIT );
-		GL_State( GLS_DEPTHMASK | GLS_DEPTHFUNC_ALWAYS );
+		// note: multiply color and alpha together in FBO
+		GL_State( GLS_SRCBLEND_SRC_ALPHA | GLS_DEPTHMASK | GLS_DEPTHFUNC_ALWAYS );
 	}
 	else {
 		// render to final FBO immediately, so enable compositing

@@ -192,14 +192,11 @@ RB_SimpleSurfaceSetup
 void RB_SimpleSurfaceSetup( const drawSurf_t *drawSurf ) {
 	RB_SimpleSpaceSetup(drawSurf->space);
 
-	// change the scissor if needed
-	if ( r_useScissor.GetBool() && !backEnd.currentScissor.Equals( drawSurf->scissorRect ) ) {
-		backEnd.currentScissor = drawSurf->scissorRect;
-		GL_ScissorVidSize( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1, 
-			backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
-			backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
-			backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
-	}
+	backEnd.currentScissor = drawSurf->scissorRect;
+	GL_ScissorVidSize( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1, 
+		backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
+		backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
+		backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
 }
 
 
@@ -298,6 +295,7 @@ void RB_ScanStencilBuffer( void ) {
 	memset( counts, 0, sizeof( counts ) );
 
 	stencilReadback = (byte *)R_StaticAlloc( glConfig.vidWidth * glConfig.vidHeight );
+	qglPixelStorei( GL_PACK_ALIGNMENT, 1 );	// otherwise small rows get padded to 32 bits
 	qglReadPixels( 0, 0, glConfig.vidWidth, glConfig.vidHeight, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, stencilReadback );
 
 	for ( i = 0; i < glConfig.vidWidth * glConfig.vidHeight; i++ ) {
@@ -327,6 +325,7 @@ void RB_CountStencilBuffer( void ) {
 	byte	*stencilReadback;
 
 	stencilReadback = (byte *)R_StaticAlloc( glConfig.vidWidth * glConfig.vidHeight );
+	qglPixelStorei( GL_PACK_ALIGNMENT, 1 );	// otherwise small rows get padded to 32 bits
 	qglReadPixels( 0, 0, glConfig.vidWidth, glConfig.vidHeight, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, stencilReadback );
 
 	count = 0;

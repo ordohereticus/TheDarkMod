@@ -3,5 +3,9 @@ cmake-build-*
 idlib/svnversion.h
 CMakeSettings.json
 .svn/
-.svn/wc.db
-*.db
+.vs/
+build/
+ipch/
+Darkmod.log
+
+ThirdParty/artefacts/

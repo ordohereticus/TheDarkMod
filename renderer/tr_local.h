@@ -824,7 +824,6 @@ public:
 	virtual void			CropRenderSize( int width, int height, bool makePowerOfTwo = false, bool forceDimensions = false );
 	virtual void			GetCurrentRenderCropSize( int &width, int &height );
 	virtual void			CaptureRenderToImage( idImage &image );
-	virtual void			CaptureRenderToFile( const char *fileName, bool fixAlpha );
 	virtual void			CaptureRenderToBuffer( unsigned char *buffer, bool usePbo = false );
 	virtual void			PostProcess();
 	virtual void			UnCrop();
@@ -1497,6 +1496,8 @@ calling this function may modify "facing" based on culling
 ============================================================
 */
 
+extern idCVar r_modelBvhShadowsGranularity;
+
 srfTriangles_t *R_CreateVertexProgramTurboShadowVolume( const idRenderEntityLocal *ent,
 		const srfTriangles_t *tri, const idRenderLightLocal *light,
 		srfCullInfo_t &cullInfo );
@@ -1647,8 +1648,8 @@ typedef struct triRange_s {
 void R_CullBvhByFrustumAndOrigin(
 	const idBounds &rootBounds, const bvhNode_t *nodes,
 	const idPlane frustum[6], int filterOri, const idVec3 &origin,
-	int forceUnknown,
-	idFlexListHuge<bvhTriRange_t> &outIntervals
+	int forceUnknown, int granularity,
+	idFlexList<bvhTriRange_t, 128> &outIntervals
 );
 
 /*

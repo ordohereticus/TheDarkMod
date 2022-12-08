@@ -3006,6 +3006,11 @@ void idEntity::Show( void )
 		{
 			m_FrobBox->SetContents( CONTENTS_FROBABLE );
 		}
+
+		// #6175 make make sure hidden items regain physics on show events
+		if ( spawnArgs.GetBool("solid", "1" ) ) {
+			SetSolid( true );
+		}
 		UpdateVisuals();
 		RestoreDecals();	// #3817
 

@@ -219,8 +219,12 @@ void R_ToggleSmpFrame( void ) {
 
 	// switch to the next frame
 	smpFrame++;
-	backendFrameData = frameData;
-	frameData = &smpFrameData[smpFrame % NUM_FRAME_DATA];
+	if (com_smp.GetBool()) {
+		backendFrameData = frameData;
+		frameData = &smpFrameData[smpFrame % NUM_FRAME_DATA];
+	} else {
+		frameData = backendFrameData = &smpFrameData[0];
+	}
 
 	// reset the memory allocation
 	R_FreeDeferredTriSurfs( frameData );
@@ -533,6 +537,12 @@ void R_TransformDepthToEyeZ( float src_depth, const float *projectionMatrix, flo
 	// this is exactly the equation from R_TransformEyeZToWin solved for Z
 	float numer = projectionMatrix[ 2 + 3 * 4 ] - ndcZ * projectionMatrix[ 3 + 3 * 4 ];
 	float denom = projectionMatrix[ 2 + 2 * 4 ] - ndcZ * projectionMatrix[ 3 + 2 * 4 ];
+
+	// stgatilov: not sure this is correct!
+	// also, we should take care to restore +infty for depth > 0.999
+	// (see R_SetupProjection for far-at-infinity details)
+	assert(0);
+
 	dst_z = - numer / denom;
 }
 

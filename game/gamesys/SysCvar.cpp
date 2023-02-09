@@ -223,6 +223,22 @@ idCVar cv_pm_mantle_pushNonCrouched_msecs("pm_mantle_pushNonCrouched_msecs","550
 idCVar cv_pm_mantle_pushNonCrouched_playgrunt_speedthreshold("pm_mantle_pushNonCrouched_playgrunt_speedthreshold", "120.0", CVAR_GAME | CVAR_FLOAT, "If the player speed exceeds this threshold, a grund sound is played when performing the mantle.", 0.0f, 100000.0f);
 idCVar cv_pm_mantle_fastLowObstaces("pm_mantle_fastLowObstacles", "1", CVAR_GAME | CVAR_BOOL, "If true, a faster mantle will be performed for low obstacles.", 0, 1);
 idCVar cv_pm_mantle_maxLowObstacleHeight("pm_mantle_maxLowObstacleHeight", "36.0", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "The maximum height of obstacles over which a fast mantle can be performed", 0.0f, 60.0f);
+
+// Daft Mugi #5892: Mantle while carrying a body
+idCVar cv_pm_mantle_maxShoulderingObstacleHeight(
+	"pm_mantle_maxShoulderingObstacleHeight", "41", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE,
+	"The maximum height of obstacles allowed for a shouldering body mantle\n"
+	"Note that mantling above eye level is disabled regardless of this value",
+	0.0f, 100.0f
+);
+idCVar cv_pm_mantle_while_shouldering(
+	"pm_mantle_while_shouldering", "1", CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE,
+	"Which restriction for mantle while shouldering?\n"
+	"  0 --- no mantling while shouldering a body (TDM original)\n"
+	"  1 --- restricted mantling while shouldering a body\n"
+	"  2 --- unrestricted mantling while shouldering a body (Cheat Mode)"
+);
+
 idCVar cv_pm_mantle_fastMediumObstaclesCrouched("pm_mantle_fastMediumObstaclesCrouched", "1", CVAR_GAME | CVAR_BOOL, "If true, a faster mantle will be performed for medium-high obstacles in crouched state", 0, 1);
 idCVar cv_pm_mantle_pullFast_msecs("pm_mantle_pullFast_msecs", "450.0", CVAR_GAME | CVAR_INTEGER |CVAR_ARCHIVE, "The duration it takes for a fast pull.", 0, 10000);
 idCVar cv_pm_mantle_fallingFast_speedthreshold("pm_mantle_fallingFast_speedthreshold", "360.0", CVAR_GAME | CVAR_FLOAT, "If falling faster than this threshold, no fast mantles will be performed.", 0.0f, 100000.0f);
@@ -250,7 +266,15 @@ idCVar cv_tdm_crouch_toggle_hold_time(	"tdm_crouch_toggle_hold_time",	"400",			C
 idCVar cv_tdm_reattach_delay(			"tdm_reattach_delay",			"100",			CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "Delay (in ms) for reattaching to ropes/ladders after detaching using crouch." );
 
 // nbohr1more: #558 Toggle Creep
-idCVar cv_tdm_creep_toggle(			    "tdm_toggle_creep",			"0",			CVAR_GAME | CVAR_BOOL, "Set to 1 to make creep toggleable." );
+idCVar cv_tdm_toggle_creep(			    "tdm_toggle_creep",			"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "Set to 1 to make creep toggleable." );
+
+// #6232: Player choice of sheathe key behavior
+idCVar cv_tdm_toggle_sheathe(
+	"tdm_toggle_sheathe", "0", CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE,
+	"Which 'put away weapons' behavior?\n"
+	"  0 --- only sheathe weapon (TDM original)\n"
+	"  1 --- toggle between sheathing and equipping weapon (TDM 2.03-2.10)"
+);
 
 // stifu #3607: Shouldering animation
 idCVar cv_pm_shoulderAnim_msecs(        "pm_shoulderAnim_msecs",        "700.0",        CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT,	"Duration of the shouldering animation in msecs. Set to 0 to disable shouldering animation.", 0.0f, 5000.0f);
@@ -791,7 +815,7 @@ idCVar pm_walkbob(					"pm_walkbob",				"0.3",			CVAR_GAME | CVAR_NETWORKSYNC | 
 idCVar pm_runbob(					"pm_runbob",				"0.35",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "bob faster when running" );
 idCVar pm_runpitch(					"pm_runpitch",				"0.001",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
 idCVar pm_runroll(					"pm_runroll",				"0.003",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
-idCVar pm_bobup(					"pm_bobup",					"0.035",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
+idCVar pm_bobup(					"pm_bobup",					"0.03",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
 idCVar pm_bobpitch(					"pm_bobpitch",				"0.001",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
 idCVar pm_bobroll(					"pm_bobroll",				"0.0015",		CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "" );
 idCVar pm_thirdPersonRange(			"pm_thirdPersonRange",		"80",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_ARCHIVE | CVAR_FLOAT, "camera distance from player in 3rd person" );

@@ -101,6 +101,7 @@ namespace {
 void InteractionStage::LoadInteractionShader( GLSLProgram *shader, const idStr &baseName ) {
 	idHashMapDict defines;
 	defines.Set( "MAX_SHADER_PARAMS", idStr::Fmt( "%d", maxShaderParamsArraySize ) );
+	defines.Set( "POISSON_DISK_USE_UBO", "1" );
 	shader->LoadFromFiles( "stages/interaction/" + baseName + ".vs.glsl", "stages/interaction/" + baseName + ".fs.glsl", defines );
 	InteractionUniforms *uniforms = shader->GetUniformGroup<InteractionUniforms>();
 	uniforms->lightProjectionCubemap.Set( TU_LIGHT_PROJECT_CUBE );
@@ -150,6 +151,14 @@ void InteractionStage::Shutdown() {
 void InteractionStage::DrawInteractions( viewLight_t *vLight, const drawSurf_t *interactionSurfs, const TiledCustomMipmapStage *stencilShadowMipmaps ) {
 	if ( !interactionSurfs ) {
 		return;
+	}
+
+	if ( vLight->lightShader->IsAmbientLight() ) {
+		if ( r_skipAmbient.GetInteger() & 2 )
+			return;
+	} else if ( r_skipInteractions.GetBool() ) {
+		if( r_skipInteractions.GetInteger() == 1 || !vLight->lightDef->parms.noShadows )
+			return;
 	}
 
 	TRACE_GL_SCOPE( "DrawInteractions" );
@@ -340,7 +349,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 		doShadows = vLight->globalInteractions != NULL;
 	}
 	if ( doShadows ) {
-		uniforms->shadows.Set( vLight->shadows );
+		uniforms->shadows.Set(true);
 		const renderCrop_t &page = vLight->shadowMapPage;
 		// https://stackoverflow.com/questions/5879403/opengl-texture-coordinates-in-pixel-space
 		idVec4 v( page.x, page.y, 0, page.width-1 );
@@ -348,7 +357,7 @@ void InteractionStage::ChooseInteractionProgram( viewLight_t *vLight, bool trans
 		v.w /= 6 * r_shadowMapSize.GetFloat();
 		uniforms->shadowRect.Set( v );
 	} else {
-		uniforms->shadows.Set(0);
+		uniforms->shadows.Set(false);
 	}
 	uniforms->shadowMapCullFront.Set( r_shadowMapCullFront );
 

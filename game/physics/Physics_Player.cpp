@@ -915,7 +915,7 @@ void idPhysics_Player::PlaySwimBurstSound()
 		return;
 
 	// speed mod
-	if ((pPlayer->usercmd.buttons & BUTTON_CREEP) || cv_tdm_creep_toggle.GetBool())
+	if (pPlayer->m_CreepIntent)
 	{
 		sSound += "_creep";
 	} else if (pPlayer->usercmd.buttons & BUTTON_RUN)
@@ -4376,6 +4376,14 @@ void idPhysics_Player::StartMantle
 		}
 	}
 
+	// #6231: Delayed fall damage on mantle
+	// Zero out all velocity sooner than at the end of the mantle so
+	// that the player receives damage feedback immediately on impact
+	// from a fall rather than at the end of the mantle animation.
+	// Also, zeroing out all velocity at mantle start makes sense,
+	// because the animation is stop, mantle, stop.
+	current.velocity.Zero();
+
 	m_mantlePhase = initialMantlePhase;
 	m_mantleTime = GetMantleTimeForPhase(m_mantlePhase);
 
@@ -5010,6 +5018,12 @@ void idPhysics_Player::PerformMantle()
 		return; // greebo: Mantling disabled by immobilization system
 	}
 
+	if (cv_pm_mantle_while_shouldering.GetInteger() == 0
+		&& p_player->IsShoulderingBody())
+	{
+		return;
+	}
+
 	if (waterLevel >= WATERLEVEL_HEAD)
 	{
 		return; // STiFU: #1037: Do not mantle underwater
@@ -5106,14 +5120,26 @@ void idPhysics_Player::PerformMantle()
 					floorHeight = -floorPos * gravityNormal;
 			}
 			const float eyeHeight = -eyePos * gravityNormal;
+			const float feetHeight = -(GetOrigin() * gravityNormal);
+			const float obstacleHeight = mantleEndHeight - feetHeight;
 
+			const bool bPullOrHang = eyeHeight < mantleEndHeight;
 			const bool bFallingFast = 
 				(current.velocity * gravityNormal) > 
 				cv_pm_mantle_fallingFast_speedthreshold.GetFloat();
 
+			// Daft Mugi #5892: While shouldering a body, allow mantling at approximately waist height.
+			if (cv_pm_mantle_while_shouldering.GetInteger() == 1
+				&& p_player->IsShoulderingBody()
+				&& (bPullOrHang // no pull or hang allowed
+					|| obstacleHeight > cv_pm_mantle_maxShoulderingObstacleHeight.GetFloat() // restrict max height
+					|| bFallingFast)) // must not be falling fast
+			{
+				return;
+			}
+
 			if (cv_pm_mantle_fastLowObstaces.GetBool()) // STiFU #4930
 			{
-				const float feetHeight = -(GetOrigin() * gravityNormal);
 				if (   IsMantleable == EMantleable_YesUpstraight	// Upstraight mantle possible
 					&& !bFallingFast
 					&& (mantleEndHeight < floorHeight + cv_pm_mantle_maxLowObstacleHeight.GetFloat() // Only allow the full obstacle height when near the floor
@@ -5131,7 +5157,7 @@ void idPhysics_Player::PerformMantle()
 
 				if (   bIsCrouched
 					&& !bFallingFast
-					&& eyeHeight < mantleEndHeight // When endheight lower than eyes, use the regular push mantle
+					&& bPullOrHang // When endheight lower than eyes, use the regular push mantle
 					&& mantleEndHeight < floorHeight + pm_normalviewheight.GetFloat())
 				{
 					// Do a fast pull-push mantle over medium sized obstacle
@@ -5139,7 +5165,7 @@ void idPhysics_Player::PerformMantle()
 					return;
 				}
 			}
-			if (eyeHeight < mantleEndHeight)
+			if (bPullOrHang)
 			{
 				// Start with pull if on the ground, hang if not
 				if (groundPlane)
@@ -5271,7 +5297,7 @@ void idPhysics_Player::ProcessPeek(idEntity* peekEntity, idEntity* door, idVec3 
 	{
 		idThread *pThread = new idThread(func);
 		int n = pThread->GetThreadNum();
-		pThread->CallFunctionArgs(func, true, "eev", peekEntity, door,normal);
+		pThread->CallFunctionArgs(func, true, "eev", peekEntity, door, &normal);
 		pThread->DelayedStart(0);
 		pThread->Execute();
 	}

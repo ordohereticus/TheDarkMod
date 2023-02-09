@@ -178,6 +178,11 @@ extern idCVar cv_pm_mantle_push_msecs;
 extern idCVar cv_pm_mantle_pushNonCrouched_msecs;
 extern idCVar cv_pm_mantle_fastLowObstaces;
 extern idCVar cv_pm_mantle_maxLowObstacleHeight;
+
+// Daft Mugi #5892: Mantle while carrying a body
+extern idCVar cv_pm_mantle_maxShoulderingObstacleHeight;
+extern idCVar cv_pm_mantle_while_shouldering;
+
 extern idCVar cv_pm_mantle_fastMediumObstaclesCrouched;
 extern idCVar cv_pm_mantle_pullFast_msecs;
 extern idCVar cv_pm_mantle_pushNonCrouched_playgrunt_speedthreshold;
@@ -219,7 +224,10 @@ extern idCVar cv_tdm_crouch_toggle_hold_time;
 extern idCVar cv_tdm_reattach_delay;
 
 // nbohr1more: #558 TDM toggle creep
-extern idCVar cv_tdm_creep_toggle;
+extern idCVar cv_tdm_toggle_creep;
+
+// #6232: Player choice of sheathe key behavior
+extern idCVar cv_tdm_toggle_sheathe;
 
 // stifu #3607: Shouldering animation
 extern idCVar cv_pm_shoulderAnim_msecs;

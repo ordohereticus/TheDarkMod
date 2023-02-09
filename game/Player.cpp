@@ -67,7 +67,7 @@ const int HEALTHPULSE_TIME = 333;
 const float MIN_BOB_SPEED = 5.0f;
 
 // shouldered body immobilizations
-const int SHOULDER_IMMOBILIZATIONS = EIM_CLIMB | EIM_ITEM_SELECT | EIM_WEAPON_SELECT | EIM_ATTACK | EIM_ITEM_USE | EIM_MANTLE | EIM_FROB_COMPLEX;
+const int SHOULDER_IMMOBILIZATIONS = EIM_CLIMB | EIM_ITEM_SELECT | EIM_WEAPON_SELECT | EIM_ATTACK | EIM_ITEM_USE | EIM_FROB_COMPLEX;
 const float SHOULDER_JUMP_HINDERANCE = 0.25f;
 
 // grayman #3485 - additional volume reduction when falling when crouched
@@ -717,6 +717,8 @@ idPlayer::idPlayer() :
 	m_IdealCrouchState		= false;
 	m_CrouchIntent			= false;
 	m_CrouchToggleBypassed	= false;
+
+	m_CreepIntent			= false;
 
 	m_LeanButtonTimeStamp	= 0;
 	m_InventoryOverlay		= -1;
@@ -2329,6 +2331,8 @@ void idPlayer::Save( idSaveGame *savefile ) const {
 	savefile->WriteBool( m_IdealCrouchState );
 	savefile->WriteBool( m_CrouchIntent );
 
+	savefile->WriteBool( m_CreepIntent );
+
 	savefile->WriteInt(m_InventoryOverlay);
 
 	savefile->WriteInt(m_WaitUntilReadyGuiHandle);
@@ -2677,6 +2681,8 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( m_CrouchIntent );
 	// stgatilov: no need to save it, but better reset it on load
 	m_CrouchToggleBypassed = false;
+
+	savefile->ReadBool( m_CreepIntent );
 
 	savefile->ReadInt(m_InventoryOverlay);
 
@@ -3274,6 +3280,12 @@ void idPlayer::DrawHUD(idUserInterface *_hud)
 		}
 
 	if ( !weapon.GetEntity() || influenceActive != INFLUENCE_NONE || privateCameraView || gameLocal.GetCamera() || !_hud || !g_showHud.GetBool() ) {
+		// #6197: even if HUD is hidden, still render subtitles overlay
+		if (subtitlesOverlay != -1) {
+			idList<int> filter(1);
+			filter.Append(subtitlesOverlay);
+			m_overlays.drawOverlays(&filter);
+		}
 		return;
 	}
 
@@ -3427,15 +3439,9 @@ void idPlayer::UpdateConditions( void )
 	AI_RUN = ( usercmd.buttons & BUTTON_RUN ) && true ;
 	AI_DEAD			= ( health <= 0 );
 	
-	// DarkMod: Catch the creep modifier
-	if (cv_tdm_creep_toggle.GetBool()){
-		AI_CREEP = true;
-	}
-	else {
-		int creepLimit = cv_pm_creepmod.GetFloat() * 127;
-		AI_CREEP = (usercmd.buttons & BUTTON_CREEP) ||
-			(idMath::Abs(usercmd.forwardmove) <= creepLimit && idMath::Abs(usercmd.rightmove) <= creepLimit);
-	}
+	int creepLimit = cv_pm_creepmod.GetFloat() * 127;
+	AI_CREEP = m_CreepIntent ||
+		(idMath::Abs(usercmd.forwardmove) <= creepLimit && idMath::Abs(usercmd.rightmove) <= creepLimit);
 }
 
 /*
@@ -3910,9 +3916,10 @@ bool idPlayer::SelectWeapon( int num, bool force )
 
 	CInventoryWeaponItemPtr item = GetCurrentWeaponItem();
 
+	// #6232 - if 'tdm_toggle_sheathe' is 1 and
 	// grayman #3747 - if the current and desired indices are zero,
 	// bring back the previous weapon if it's non-zero
-	if ( (num == 0) && (item->GetWeaponIndex() == 0) )
+	if ( cv_tdm_toggle_sheathe.GetBool() && (num == 0) && (item->GetWeaponIndex() == 0) )
 	{
 		if (previousWeapon > 0)
 		{
@@ -4507,7 +4514,7 @@ void idPlayer::OnStartShoulderingBody(idEntity* body)
 	// TODO: Also make sure you can't grab anything else (hands are full)
 	// requires a new EIM flag?
 	SetImmobilization( "ShoulderedBody", SHOULDER_IMMOBILIZATIONS );
-	
+
 	// set hinderance
 	float maxSpeed = body->spawnArgs.GetFloat("shouldered_maxspeed","1.0f");
 	SetHinderance( "ShoulderedBody", 1.0f, maxSpeed );
@@ -4922,7 +4929,7 @@ void idPlayer::BobCycle( const idVec3 &pushVelocity ) {
 		}
 
 		// greebo: is the player creeping? (Only kicks in when not running, run key cancels out creep key)
-		if ( (cv_tdm_creep_toggle.GetBool() || (usercmd.buttons & BUTTON_CREEP)) && !(usercmd.buttons & BUTTON_RUN)) 
+		if ( m_CreepIntent && !(usercmd.buttons & BUTTON_RUN) )
 		{
 			bobmove *= 0.5f * (1 - bobFrac);
 		}
@@ -5699,6 +5706,24 @@ void idPlayer::PerformImpulse( int impulse ) {
 		}
 		break;
 
+		case IMPULSE_CREEP:		// Creep
+		{
+			if (cv_tdm_toggle_creep.GetBool())
+			{
+					if (entityNumber == gameLocal.localClientNum)
+					{
+						m_CreepIntent = !m_CreepIntent;
+					}
+			}
+			else
+			{
+				m_CreepIntent = true;
+			}
+
+			m_ButtonStateTracker.StartTracking(impulse);
+		}
+		break;
+
 		case IMPULSE_MANTLE:
 		{
 			if ( entityNumber == gameLocal.localClientNum )
@@ -6034,6 +6059,13 @@ void idPlayer::PerformKeyRelease(int impulse, int holdTime)
 			// clear climb detach or slide intent when crouch is released
 			physicsObj.m_bSlideOrDetachClimb = false;
 
+		break;
+
+		case IMPULSE_CREEP:		// TDM creep
+			if (!cv_tdm_toggle_creep.GetBool())
+			{
+				m_CreepIntent = false;
+			}
 		break;
 
 		case IMPULSE_FROB:		// TDM Use/Frob
@@ -6455,7 +6487,7 @@ void idPlayer::AdjustSpeed( void )
 			speed = pm_noclipspeed.GetFloat() * cv_pm_runmod.GetFloat();
 			bobFrac = 0.0f;
 		} 
-		else if ((usercmd.buttons & BUTTON_CREEP) || cv_tdm_creep_toggle.GetBool())
+		else if (m_CreepIntent)
 		{
 			// slow "creep" noclip
 			speed = pm_noclipspeed.GetFloat() * cv_pm_creepmod.GetFloat();
@@ -6475,9 +6507,8 @@ void idPlayer::AdjustSpeed( void )
 		float walkSpeed = pm_walkspeed.GetFloat();
 
 		speed = walkSpeed * cv_pm_runmod.GetFloat();
-		// apply creep modifier; creep is on button_5
-		const bool bCreeping = (usercmd.buttons & BUTTON_CREEP) || cv_tdm_creep_toggle.GetBool();
-		if (bCreeping)
+		// apply creep modifier
+		if (m_CreepIntent)
 		{
 			speed *= (cv_pm_running_creepmod.GetFloat());
 		}
@@ -6515,9 +6546,8 @@ void idPlayer::AdjustSpeed( void )
 		speed = pm_walkspeed.GetFloat();
 		bobFrac = 0.0f;
 
-		// apply creep modifier; creep is on button_5
-		const bool bCreeping = (usercmd.buttons & BUTTON_CREEP) || cv_tdm_creep_toggle.GetBool();
-		if(bCreeping)
+		// apply creep modifier
+		if (m_CreepIntent)
 		{
 			speed *= cv_pm_creepmod.GetFloat();
 		}		
@@ -6525,7 +6555,7 @@ void idPlayer::AdjustSpeed( void )
 		// STiFU #1932: Apply hinderance not only to max speed but to all speeds.
 		if (cv_pm_softhinderance_active.GetBool())
 		{
-			if (bCreeping)
+			if (m_CreepIntent)
 			{
 				speed *= (cv_pm_softhinderance_creep.GetFloat() * fCurrentHinderance 
 					+ 1.0f - cv_pm_softhinderance_creep.GetFloat());
